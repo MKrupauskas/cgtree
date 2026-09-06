@@ -1,14 +1,20 @@
 # Testing cgtree on macOS
 
-`cgtree` requires a Linux system with cgroup v2. On macOS, use Docker to run it in a container.
+`cgtree` requires a Linux system with cgroup v2. On macOS, use Docker to build and run it in a container.
 
 ## Quick Start
 
-```sh
-# Build the binary
-cargo build --release
+**Important**: Building with `cargo build` on macOS creates a macOS binary that won't work in Linux containers. You must build inside a Linux container.
 
-# Run in Ubuntu container (has realistic cgroup hierarchy)
+```sh
+# Build for Linux inside a Rust container
+docker run --rm \
+  -v "$(pwd):/workspace" \
+  -w /workspace \
+  rust:latest \
+  cargo build --release
+
+# Run the Linux binary in Ubuntu container
 docker run --rm -it \
   --privileged \
   --cgroupns=host \
@@ -17,7 +23,19 @@ docker run --rm -it \
   cgtree list --procs
 ```
 
-That's it. Docker Desktop on macOS uses cgroup v2 by default (v4.3.0+).
+**Alternative**: Build and run in a single command:
+
+```sh
+docker run --rm -it \
+  --privileged \
+  --cgroupns=host \
+  -v "$(pwd):/workspace" \
+  -w /workspace \
+  rust:latest \
+  bash -c "cargo build --release && /workspace/target/release/cgtree list --procs"
+```
+
+Docker Desktop on macOS uses cgroup v2 by default (v4.3.0+).
 
 ## CI/CD Testing
 
