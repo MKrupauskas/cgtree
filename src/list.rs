@@ -15,10 +15,17 @@ pub fn render(data: &CgroupData, depth: Option<usize>, procs: bool, out: &mut St
 }
 
 fn label(node: &CgroupNode, procs: bool) -> String {
+    let has_children = !node.children.is_empty();
+    let name = if has_children {
+        format!("{}/", node.name)
+    } else {
+        node.name.clone()
+    };
+
     match (procs, node.procs) {
-        (true, Some(n)) => format!("{} ({n})", node.name),
-        (true, None) => format!("{} (?)", node.name),
-        (false, _) => node.name.clone(),
+        (true, Some(n)) => format!("{name} ({n})"),
+        (true, None) => format!("{name} (?)"),
+        (false, _) => name,
     }
 }
 
@@ -82,9 +89,9 @@ mod tests {
         render(&sample(), None, false, &mut out);
         assert_eq!(
             out,
-            "/sys/fs/cgroup\n\
+            "/sys/fs/cgroup/\n\
              ├── init.scope\n\
-             └── system.slice\n\
+             └── system.slice/\n\
              \u{20}   └── ssh.service\n"
         );
     }
@@ -95,9 +102,9 @@ mod tests {
         render(&sample(), Some(1), false, &mut out);
         assert_eq!(
             out,
-            "/sys/fs/cgroup\n\
+            "/sys/fs/cgroup/\n\
              ├── init.scope\n\
-             └── system.slice\n"
+             └── system.slice/\n"
         );
     }
 
