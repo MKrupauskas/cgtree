@@ -122,7 +122,7 @@ fn read_interface_files(path: &Path) -> Vec<FieldEntry> {
         let name = entry.file_name().to_string_lossy().into_owned();
 
         // Skip write-only files that can trigger side effects
-        if name == "memory.reclaim" || name == "memory.kill" {
+        if name == "memory.reclaim" || name == "memory.kill" || name == "cgroup.kill" {
             continue;
         }
 
