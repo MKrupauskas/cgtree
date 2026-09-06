@@ -16,7 +16,6 @@ docker run --rm \
 
 # Run the Linux binary in Ubuntu container
 docker run --rm -it \
-  --privileged \
   --cgroupns=host \
   -v "$(pwd)/target/release/cgtree:/usr/local/bin/cgtree:ro" \
   ubuntu:24.04 \
@@ -30,7 +29,6 @@ To test the interactive viewer:
 ```sh
 # Open interactive TUI (requires -it for terminal)
 docker run --rm -it \
-  --privileged \
   --cgroupns=host \
   -v "$(pwd)/target/release/cgtree:/usr/local/bin/cgtree:ro" \
   ubuntu:24.04 \
