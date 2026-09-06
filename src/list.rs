@@ -44,9 +44,9 @@ fn render_props(node: &CgroupNode, prefix: &str, props: &[String], out: &mut Str
             out.push_str("    ");
             out.push_str(&field.name);
             out.push_str(" = ");
-            // Show first line only if multi-line
-            let value = field.value.lines().next().unwrap_or(&field.value);
-            out.push_str(value);
+            // Collapse multi-line values into a single line
+            let value = collapse_value(&field.value);
+            out.push_str(&value);
             out.push('\n');
         }
     } else {
@@ -56,12 +56,21 @@ fn render_props(node: &CgroupNode, prefix: &str, props: &[String], out: &mut Str
                 out.push_str("    ");
                 out.push_str(prop);
                 out.push_str(" = ");
-                // Show first line only if multi-line
-                let value = field.value.lines().next().unwrap_or(&field.value);
-                out.push_str(value);
+                // Collapse multi-line values into a single line
+                let value = collapse_value(&field.value);
+                out.push_str(&value);
                 out.push('\n');
             }
         }
+    }
+}
+
+fn collapse_value(value: &str) -> String {
+    let lines: Vec<&str> = value.lines().collect();
+    if lines.len() <= 1 {
+        value.to_string()
+    } else {
+        lines.join("\\n")
     }
 }
 
@@ -222,5 +231,25 @@ mod tests {
         assert!(out.contains("memory.max = max"), "got: {out}");
         assert!(out.contains("cpu.weight = 100"), "got: {out}");
         assert!(out.contains("pids.max = max"), "got: {out}");
+    }
+
+    #[test]
+    fn collapses_multiline_values() {
+        let data = CgroupData {
+            root: node_with_fields(
+                "/sys/fs/cgroup",
+                Some(0),
+                vec![("memory.stat", "anon 1024\nfile 2048\nshmem 512")],
+                vec![],
+            ),
+        };
+
+        let mut out = String::new();
+        render(&data, None, false, &[String::from("memory.stat")], &mut out);
+
+        assert!(out.contains("memory.stat = anon 1024\\nfile 2048\\nshmem 512"), "got: {out}");
+        // Ensure no actual newlines within the value
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2); // Only root name and the property line
     }
 }
