@@ -43,10 +43,19 @@ fn render_props(node: &CgroupNode, prefix: &str, props: &[String], out: &mut Str
             render_prop(&field.name, &field.value, prefix, out);
         }
     } else {
-        for prop in props {
-            if let Some(field) = node.fields.iter().find(|f| &f.name == prop) {
-                render_prop(prop, &field.value, prefix, out);
+        // Collect matching fields (supports substring matching)
+        let mut matched_fields = Vec::new();
+        for field in &node.fields {
+            for pattern in props {
+                if field.name.contains(pattern.as_str()) {
+                    matched_fields.push(field);
+                    break; // Avoid duplicates if multiple patterns match
+                }
             }
+        }
+
+        for field in matched_fields {
+            render_prop(&field.name, &field.value, prefix, out);
         }
     }
 }
@@ -260,5 +269,65 @@ mod tests {
         assert!(out.contains("        anon 1024\n"), "got: {out}");
         assert!(out.contains("        file 2048\n"), "got: {out}");
         assert!(out.contains("        shmem 512\n"), "got: {out}");
+    }
+
+    #[test]
+    fn matches_props_by_substring() {
+        let data = CgroupData {
+            root: node_with_fields(
+                "/sys/fs/cgroup",
+                Some(0),
+                vec![
+                    ("memory.swap.max", "max"),
+                    ("memory.swap.current", "0"),
+                    ("memory.max", "1073741824"),
+                    ("cpu.weight", "100"),
+                ],
+                vec![],
+            ),
+        };
+
+        let mut out = String::new();
+        render(&data, None, false, &[String::from("swap")], &mut out);
+
+        // Should match both memory.swap.max and memory.swap.current
+        assert!(out.contains("memory.swap.max = max"), "got: {out}");
+        assert!(out.contains("memory.swap.current = 0"), "got: {out}");
+        // Should NOT match memory.max or cpu.weight
+        assert!(!out.contains("memory.max = "), "got: {out}");
+        assert!(!out.contains("cpu.weight = "), "got: {out}");
+    }
+
+    #[test]
+    fn matches_multiple_patterns() {
+        let data = CgroupData {
+            root: node_with_fields(
+                "/sys/fs/cgroup",
+                Some(0),
+                vec![
+                    ("memory.swap.max", "max"),
+                    ("memory.max", "1073741824"),
+                    ("cpu.weight", "100"),
+                    ("cpu.max", "100000 100000"),
+                ],
+                vec![],
+            ),
+        };
+
+        let mut out = String::new();
+        render(
+            &data,
+            None,
+            false,
+            &[String::from("swap"), String::from("cpu.weight")],
+            &mut out,
+        );
+
+        // Should match memory.swap.max and cpu.weight
+        assert!(out.contains("memory.swap.max = max"), "got: {out}");
+        assert!(out.contains("cpu.weight = 100"), "got: {out}");
+        // Should NOT match memory.max or cpu.max
+        assert!(!out.contains("memory.max = "), "got: {out}");
+        assert!(!out.contains("cpu.max = "), "got: {out}");
     }
 }
