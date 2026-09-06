@@ -7,6 +7,25 @@
 **Important**: Building with `cargo build` on macOS creates a macOS binary that won't work in Linux containers. You must build inside a Linux container.
 
 ```sh
+# Build and test in a single Linux container
+docker run --rm -it \
+  --cgroupns=host \
+  -v "$(pwd):/workspace" \
+  -w /workspace \
+  rust:latest \
+  bash
+
+# Inside the container:
+cargo build --release
+./target/release/cgtree list --procs
+./target/release/cgtree list --props swap,cpu
+./target/release/cgtree view  # Interactive TUI
+exit
+```
+
+Alternatively, build once and run separately:
+
+```sh
 # Build for Linux inside a Rust container
 docker run --rm \
   -v "$(pwd):/workspace" \
@@ -24,7 +43,9 @@ docker run --rm -it \
 
 ### Interactive TUI Mode
 
-To test the interactive viewer:
+Use `↑`/`↓` or `j`/`k` to navigate, `Enter` to expand/collapse, `Tab` to switch panes, `q` to quit.
+
+The TUI works in the build-and-test container shown above, or separately:
 
 ```sh
 # Open interactive TUI (requires -it for terminal)
@@ -35,8 +56,6 @@ docker run --rm -it \
   cgtree view
 # Or just: cgtree (defaults to view when stdout is a terminal)
 ```
-
-Use `↑`/`↓` or `j`/`k` to navigate, `Enter` to expand/collapse, `Tab` to switch panes, `q` to quit.
 
 Docker Desktop on macOS uses cgroup v2 by default (v4.3.0+).
 
