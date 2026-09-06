@@ -120,6 +120,12 @@ fn read_interface_files(path: &Path) -> Vec<FieldEntry> {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
+
+        // Skip write-only files that can trigger side effects
+        if name == "memory.reclaim" || name == "memory.kill" {
+            continue;
+        }
+
         let value = match std::fs::read_to_string(entry.path()) {
             Ok(s) => s.trim_end().to_string(),
             Err(err) => format!("<unreadable: {err}>"),
