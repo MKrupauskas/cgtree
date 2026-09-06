@@ -330,4 +330,43 @@ mod tests {
         assert!(!out.contains("memory.max = "), "got: {out}");
         assert!(!out.contains("cpu.max = "), "got: {out}");
     }
+
+    #[test]
+    fn matches_multiple_broad_patterns() {
+        let data = CgroupData {
+            root: node_with_fields(
+                "/sys/fs/cgroup",
+                Some(0),
+                vec![
+                    ("memory.swap.max", "max"),
+                    ("memory.swap.current", "0"),
+                    ("memory.max", "1073741824"),
+                    ("cpu.weight", "100"),
+                    ("cpu.max", "100000 100000"),
+                    ("cpu.stat", "usage_usec 12345\nuser_usec 6789"),
+                    ("pids.max", "max"),
+                ],
+                vec![],
+            ),
+        };
+
+        let mut out = String::new();
+        render(
+            &data,
+            None,
+            false,
+            &[String::from("swap"), String::from("cpu")],
+            &mut out,
+        );
+
+        // Should match all swap and cpu properties
+        assert!(out.contains("memory.swap.max = max"), "got: {out}");
+        assert!(out.contains("memory.swap.current = 0"), "got: {out}");
+        assert!(out.contains("cpu.weight = 100"), "got: {out}");
+        assert!(out.contains("cpu.max = 100000 100000"), "got: {out}");
+        assert!(out.contains("cpu.stat =\n"), "got: {out}");
+        // Should NOT match memory.max or pids.max
+        assert!(!out.contains("memory.max = "), "got: {out}");
+        assert!(!out.contains("pids.max = "), "got: {out}");
+    }
 }
