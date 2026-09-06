@@ -37,7 +37,6 @@ struct Row {
     depth: usize,
     has_children: bool,
     expanded: bool,
-    procs: Option<usize>,
 }
 
 struct App {
@@ -192,7 +191,6 @@ impl App {
             depth,
             has_children: !node.children.is_empty(),
             expanded,
-            procs: node.procs,
         });
         if expanded {
             for child in &node.children {
@@ -255,17 +253,11 @@ impl App {
                 } else {
                     "▸ "
                 };
-                let mut spans = vec![
+                let spans = vec![
                     Span::raw("  ".repeat(row.depth)),
                     Span::styled(marker, Style::default().fg(Color::DarkGray)),
                     Span::raw(row.label.clone()),
                 ];
-                if let Some(n) = row.procs.filter(|&n| n > 0) {
-                    spans.push(Span::styled(
-                        format!("  ({n})"),
-                        Style::default().fg(Color::DarkGray),
-                    ));
-                }
                 ListItem::new(Line::from(spans))
             })
             .collect();

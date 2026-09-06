@@ -1,10 +1,101 @@
 use crate::data::{CgroupData, CgroupNode};
+use anyhow::Result;
+use serde::Serialize;
 
 /// Prints the tree in `tree`-style plain text.
 pub fn print(data: &CgroupData, depth: Option<usize>, props: &[String]) {
     let mut out = String::new();
     render(data, depth, props, &mut out);
     print!("{out}");
+}
+
+/// Prints the tree in JSON format.
+pub fn print_json(data: &CgroupData, depth: Option<usize>, props: &[String]) -> Result<()> {
+    let json_data = to_json(data, depth, props);
+    println!("{}", serde_json::to_string_pretty(&json_data)?);
+    Ok(())
+}
+
+/// Converts the cgroup data to a JSON-serializable structure.
+fn to_json(data: &CgroupData, depth: Option<usize>, props: &[String]) -> JsonOutput {
+    JsonOutput {
+        root: node_to_json(&data.root, depth, props, 1),
+    }
+}
+
+/// JSON output structure for the cgroup hierarchy.
+#[derive(Serialize)]
+struct JsonOutput {
+    root: JsonNode,
+}
+
+/// JSON representation of a cgroup node.
+#[derive(Serialize)]
+struct JsonNode {
+    name: String,
+    path: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    fields: Vec<JsonField>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    children: Vec<JsonNode>,
+}
+
+/// JSON representation of a cgroup field.
+#[derive(Serialize)]
+struct JsonField {
+    name: String,
+    value: String,
+}
+
+fn node_to_json(
+    node: &CgroupNode,
+    depth: Option<usize>,
+    props: &[String],
+    level: usize,
+) -> JsonNode {
+    let fields = filter_fields(node, props);
+    let children = if depth.is_some_and(|d| level > d) {
+        Vec::new()
+    } else {
+        node.children
+            .iter()
+            .map(|child| node_to_json(child, depth, props, level + 1))
+            .collect()
+    };
+
+    JsonNode {
+        name: node.name.clone(),
+        path: node.path.display().to_string(),
+        fields,
+        children,
+    }
+}
+
+fn filter_fields(node: &CgroupNode, props: &[String]) -> Vec<JsonField> {
+    if props.is_empty() {
+        return Vec::new();
+    }
+
+    let show_all = props.iter().any(|p| p == "*");
+
+    if show_all {
+        node.fields
+            .iter()
+            .map(|f| JsonField {
+                name: f.name.clone(),
+                value: f.value.clone(),
+            })
+            .collect()
+    } else {
+        node.fields
+            .iter()
+            .filter(|field| props.iter().any(|pattern| field.name.contains(pattern.as_str())))
+            .map(|f| JsonField {
+                name: f.name.clone(),
+                value: f.value.clone(),
+            })
+            .collect()
+    }
 }
 
 /// Renders the tree into a string (separated from print for testing).
@@ -115,13 +206,12 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn node(name: &str, procs: Option<usize>, children: Vec<CgroupNode>) -> CgroupNode {
-        node_with_fields(name, procs, Vec::new(), children)
+    fn node(name: &str, children: Vec<CgroupNode>) -> CgroupNode {
+        node_with_fields(name, Vec::new(), children)
     }
 
     fn node_with_fields(
         name: &str,
-        procs: Option<usize>,
         fields: Vec<(&str, &str)>,
         children: Vec<CgroupNode>,
     ) -> CgroupNode {
@@ -129,7 +219,6 @@ mod tests {
         CgroupNode {
             name: name.to_string(),
             path: PathBuf::from(name),
-            procs,
             fields: fields
                 .into_iter()
                 .map(|(k, v)| FieldEntry {
@@ -145,13 +234,11 @@ mod tests {
         CgroupData {
             root: node(
                 "/sys/fs/cgroup",
-                Some(0),
                 vec![
-                    node("init.scope", Some(1), vec![]),
+                    node("init.scope", vec![]),
                     node(
                         "system.slice",
-                        Some(0),
-                        vec![node("ssh.service", Some(2), vec![])],
+                        vec![node("ssh.service", vec![])],
                     ),
                 ],
             ),
@@ -188,11 +275,9 @@ mod tests {
         let data = CgroupData {
             root: node_with_fields(
                 "/sys/fs/cgroup",
-                Some(0),
                 vec![("memory.max", "max"), ("cpu.weight", "100")],
                 vec![node_with_fields(
                     "system.slice",
-                    Some(0),
                     vec![("memory.max", "1073741824"), ("cpu.weight", "200")],
                     vec![],
                 )],
@@ -218,7 +303,6 @@ mod tests {
         let data = CgroupData {
             root: node_with_fields(
                 "/sys/fs/cgroup",
-                Some(0),
                 vec![
                     ("memory.max", "max"),
                     ("cpu.weight", "100"),
@@ -241,7 +325,6 @@ mod tests {
         let data = CgroupData {
             root: node_with_fields(
                 "/sys/fs/cgroup",
-                Some(0),
                 vec![("memory.stat", "anon 1024\nfile 2048\nshmem 512")],
                 vec![],
             ),
@@ -261,7 +344,6 @@ mod tests {
         let data = CgroupData {
             root: node_with_fields(
                 "/sys/fs/cgroup",
-                Some(0),
                 vec![
                     ("memory.swap.max", "max"),
                     ("memory.swap.current", "0"),
@@ -288,7 +370,6 @@ mod tests {
         let data = CgroupData {
             root: node_with_fields(
                 "/sys/fs/cgroup",
-                Some(0),
                 vec![
                     ("memory.swap.max", "max"),
                     ("memory.max", "1073741824"),
@@ -320,7 +401,6 @@ mod tests {
         let data = CgroupData {
             root: node_with_fields(
                 "/sys/fs/cgroup",
-                Some(0),
                 vec![
                     ("memory.swap.max", "max"),
                     ("memory.swap.current", "0"),
@@ -351,5 +431,58 @@ mod tests {
         // Should NOT match memory.max or pids.max
         assert!(!out.contains("memory.max = "), "got: {out}");
         assert!(!out.contains("pids.max = "), "got: {out}");
+    }
+
+    #[test]
+    fn outputs_json_hierarchy() {
+        let data = sample();
+        let json_output = to_json(&data, None, &[]);
+        let json_str = serde_json::to_string(&json_output).unwrap();
+
+        // Check that the JSON contains expected structure
+        assert!(json_str.contains("\"root\""));
+        assert!(json_str.contains("\"name\":\"/sys/fs/cgroup\""));
+        assert!(json_str.contains("\"name\":\"init.scope\""));
+        assert!(json_str.contains("\"name\":\"system.slice\""));
+        assert!(json_str.contains("\"name\":\"ssh.service\""));
+    }
+
+    #[test]
+    fn outputs_json_with_fields() {
+        let data = CgroupData {
+            root: node_with_fields(
+                "/sys/fs/cgroup",
+                vec![("memory.max", "max"), ("cpu.weight", "100")],
+                vec![node_with_fields(
+                    "system.slice",
+                    vec![("memory.max", "1073741824")],
+                    vec![],
+                )],
+            ),
+        };
+
+        let json_output = to_json(&data, None, &[String::from("memory.max")]);
+        let json_str = serde_json::to_string(&json_output).unwrap();
+
+        // Should include the requested field
+        assert!(json_str.contains("\"fields\""));
+        assert!(json_str.contains("\"name\":\"memory.max\""));
+        assert!(json_str.contains("\"value\":\"max\""));
+        assert!(json_str.contains("\"value\":\"1073741824\""));
+        // Should NOT include cpu.weight
+        assert!(!json_str.contains("cpu.weight"));
+    }
+
+    #[test]
+    fn json_respects_depth() {
+        let data = sample();
+        let json_output = to_json(&data, Some(1), &[]);
+        let json_str = serde_json::to_string(&json_output).unwrap();
+
+        // Should include first level children
+        assert!(json_str.contains("\"name\":\"init.scope\""));
+        assert!(json_str.contains("\"name\":\"system.slice\""));
+        // Should NOT include second level children
+        assert!(!json_str.contains("\"name\":\"ssh.service\""));
     }
 }

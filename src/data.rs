@@ -1,27 +1,26 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use serde::Serialize;
 
 /// A complete snapshot of cgroup data, including tree structure and all fields.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CgroupData {
     pub root: CgroupNode,
 }
 
 /// A single cgroup in the tree with its metadata and children.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CgroupNode {
     pub name: String,
     pub path: PathBuf,
-    /// Number of pids in cgroup.procs; None if the file was unreadable.
-    pub procs: Option<usize>,
     /// All interface files in this cgroup directory (sorted by name).
     pub fields: Vec<FieldEntry>,
     pub children: Vec<CgroupNode>,
 }
 
 /// A single cgroup interface file with its name and contents.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FieldEntry {
     pub name: String,
     pub value: String,
@@ -72,7 +71,6 @@ fn read_subtree(path: &Path, name: String) -> Result<CgroupNode> {
 
     Ok(CgroupNode {
         name,
-        procs: read_proc_count(path),
         fields: read_interface_files(path),
         path: path.to_path_buf(),
         children,
@@ -95,17 +93,10 @@ fn read_structure_subtree(path: &Path, name: String) -> Result<CgroupNode> {
 
     Ok(CgroupNode {
         name,
-        procs: read_proc_count(path),
         fields: Vec::new(), // No fields in structure-only mode
         path: path.to_path_buf(),
         children,
     })
-}
-
-/// Reads the number of processes from cgroup.procs.
-fn read_proc_count(path: &Path) -> Option<usize> {
-    let procs = std::fs::read_to_string(path.join("cgroup.procs")).ok()?;
-    Some(procs.lines().filter(|l| !l.trim().is_empty()).count())
 }
 
 /// Reads all interface files in a cgroup directory, sorted by name.
@@ -176,7 +167,6 @@ mod tests {
         fs::write(root.join("memory.current"), "4096\n").unwrap();
 
         let data = read_structure_only(root).unwrap();
-        assert_eq!(data.root.procs, Some(2));
         assert_eq!(data.root.fields.len(), 0);
     }
 

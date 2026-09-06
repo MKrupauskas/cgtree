@@ -35,6 +35,10 @@ enum Command {
         /// Show specified cgroup properties (comma-separated, e.g. "memory.swap.max,cpu.weight")
         #[arg(short, long, value_delimiter = ',')]
         props: Vec<String>,
+
+        /// Output format (text or json)
+        #[arg(short, long, default_value = "text")]
+        format: String,
     },
     /// Open the interactive viewer
     View,
@@ -55,7 +59,17 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     cgroup::ensure_v2(&cli.root)?;
     let data = cgroup::scan(&cli.root)?;
     match cli.command {
-        Some(Command::List { depth, props }) => list::print(&data, depth, &props),
+        Some(Command::List {
+            depth,
+            props,
+            format,
+        }) => {
+            if format == "json" {
+                list::print_json(&data, depth, &props)?;
+            } else {
+                list::print(&data, depth, &props);
+            }
+        }
         Some(Command::View) => tui::run(&cli.root, data)?,
         None => {
             if std::io::stdout().is_terminal() {

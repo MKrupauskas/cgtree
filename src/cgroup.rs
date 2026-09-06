@@ -69,8 +69,6 @@ mod tests {
         let system = &data.root.children[1];
         let names: Vec<&str> = system.children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["cron.service", "ssh.service"]);
-        assert_eq!(system.children[0].procs, Some(2));
-        assert_eq!(system.children[1].procs, Some(1));
     }
 
     #[test]
