@@ -1,20 +1,20 @@
-use crate::cgroup::Node;
+use crate::data::{CgroupData, CgroupNode};
 
 /// Prints the tree in `tree`-style plain text.
-pub fn print(tree: &Node, depth: Option<usize>, procs: bool) {
+pub fn print(data: &CgroupData, depth: Option<usize>, procs: bool) {
     let mut out = String::new();
-    render(tree, depth, procs, &mut out);
+    render(data, depth, procs, &mut out);
     print!("{out}");
 }
 
 /// Renders the tree into a string (separated from print for testing).
-pub fn render(tree: &Node, depth: Option<usize>, procs: bool, out: &mut String) {
-    out.push_str(&label(tree, procs));
+pub fn render(data: &CgroupData, depth: Option<usize>, procs: bool, out: &mut String) {
+    out.push_str(&label(&data.root, procs));
     out.push('\n');
-    render_children(&tree.children, "", depth, procs, 1, out);
+    render_children(&data.root.children, "", depth, procs, 1, out);
 }
 
-fn label(node: &Node, procs: bool) -> String {
+fn label(node: &CgroupNode, procs: bool) -> String {
     match (procs, node.procs) {
         (true, Some(n)) => format!("{} ({n})", node.name),
         (true, None) => format!("{} (?)", node.name),
@@ -23,7 +23,7 @@ fn label(node: &Node, procs: bool) -> String {
 }
 
 fn render_children(
-    nodes: &[Node],
+    nodes: &[CgroupNode],
     prefix: &str,
     depth: Option<usize>,
     procs: bool,
@@ -49,28 +49,31 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn node(name: &str, procs: Option<usize>, children: Vec<Node>) -> Node {
-        Node {
+    fn node(name: &str, procs: Option<usize>, children: Vec<CgroupNode>) -> CgroupNode {
+        CgroupNode {
             name: name.to_string(),
             path: PathBuf::from(name),
             procs,
+            fields: Vec::new(),
             children,
         }
     }
 
-    fn sample() -> Node {
-        node(
-            "/sys/fs/cgroup",
-            Some(0),
-            vec![
-                node("init.scope", Some(1), vec![]),
-                node(
-                    "system.slice",
-                    Some(0),
-                    vec![node("ssh.service", Some(2), vec![])],
-                ),
-            ],
-        )
+    fn sample() -> CgroupData {
+        CgroupData {
+            root: node(
+                "/sys/fs/cgroup",
+                Some(0),
+                vec![
+                    node("init.scope", Some(1), vec![]),
+                    node(
+                        "system.slice",
+                        Some(0),
+                        vec![node("ssh.service", Some(2), vec![])],
+                    ),
+                ],
+            ),
+        }
     }
 
     #[test]

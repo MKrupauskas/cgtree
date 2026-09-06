@@ -10,13 +10,14 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::{DefaultTerminal, Frame};
 
-use crate::cgroup::{self, Node};
+use crate::cgroup;
+use crate::data::{CgroupData, CgroupNode};
 
-pub fn run(root: &Path, tree: Node) -> Result<()> {
+pub fn run(root: &Path, data: CgroupData) -> Result<()> {
     if !std::io::stdout().is_terminal() {
         bail!("interactive view needs a terminal; use `cgtree list` when piping");
     }
-    let mut app = App::new(root.to_path_buf(), tree);
+    let mut app = App::new(root.to_path_buf(), data);
     let mut terminal = ratatui::init();
     let result = app.run(&mut terminal);
     ratatui::restore();
@@ -41,7 +42,7 @@ struct Row {
 
 struct App {
     root: PathBuf,
-    tree: Node,
+    data: CgroupData,
     expanded: HashSet<PathBuf>,
     selected: usize,
     fields_scroll: u16,
@@ -51,12 +52,12 @@ struct App {
 }
 
 impl App {
-    fn new(root: PathBuf, tree: Node) -> Self {
+    fn new(root: PathBuf, data: CgroupData) -> Self {
         let mut expanded = HashSet::new();
-        expanded.insert(tree.path.clone());
+        expanded.insert(data.root.path.clone());
         App {
             root,
-            tree,
+            data,
             expanded,
             selected: 0,
             fields_scroll: 0,
@@ -169,8 +170,8 @@ impl App {
     }
 
     fn rescan(&mut self) {
-        if let Ok(tree) = cgroup::scan(&self.root) {
-            self.tree = tree;
+        if let Ok(data) = cgroup::scan(&self.root) {
+            self.data = data;
             let rows = self.rows();
             self.selected = self.selected.min(rows.len().saturating_sub(1));
         }
@@ -179,11 +180,11 @@ impl App {
     /// Flattens the expanded portion of the tree into display order.
     fn rows(&self) -> Vec<Row> {
         let mut rows = Vec::new();
-        self.flatten(&self.tree, 0, &mut rows);
+        self.flatten(&self.data.root, 0, &mut rows);
         rows
     }
 
-    fn flatten(&self, node: &Node, depth: usize, rows: &mut Vec<Row>) {
+    fn flatten(&self, node: &CgroupNode, depth: usize, rows: &mut Vec<Row>) {
         let expanded = self.expanded.contains(&node.path);
         rows.push(Row {
             path: node.path.clone(),
@@ -198,6 +199,23 @@ impl App {
                 self.flatten(child, depth + 1, rows);
             }
         }
+    }
+
+    /// Finds a node by path in the tree.
+    fn find_node(&self, path: &Path) -> Option<&CgroupNode> {
+        Self::find_in_subtree(&self.data.root, path)
+    }
+
+    fn find_in_subtree<'a>(node: &'a CgroupNode, path: &Path) -> Option<&'a CgroupNode> {
+        if node.path == path {
+            return Some(node);
+        }
+        for child in &node.children {
+            if let Some(found) = Self::find_in_subtree(child, path) {
+                return Some(found);
+            }
+        }
+        None
     }
 
     fn draw(&mut self, frame: &mut Frame) {
@@ -252,7 +270,7 @@ impl App {
             })
             .collect();
 
-        let title = format!(" cgroups ({}) ", self.tree.count());
+        let title = format!(" cgroups ({}) ", self.data.count());
         let list = List::new(items)
             .block(self.pane_block(title, Pane::Tree))
             .highlight_style(
@@ -269,22 +287,33 @@ impl App {
         let Some(row) = rows.get(self.selected) else {
             return;
         };
-        let mut lines: Vec<Line> = Vec::new();
-        for (name, value) in cgroup::read_fields(&row.path) {
-            let name_style = Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD);
-            let mut value_lines = value.lines();
-            let first = value_lines.next().unwrap_or("");
-            lines.push(Line::from(vec![
-                Span::styled(name, name_style),
-                Span::raw("  "),
-                Span::raw(first.to_string()),
-            ]));
-            for extra in value_lines {
-                lines.push(Line::from(format!("  {extra}")));
+
+        // Build lines from the node's pre-loaded fields.
+        // We need to do this in a block to drop the borrow before modifying self.
+        let mut lines: Vec<Line> = {
+            let node = self.find_node(&row.path);
+            let mut lines_temp: Vec<Line> = Vec::new();
+
+            if let Some(node) = node {
+                for field in &node.fields {
+                    let name_style = Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD);
+                    let mut value_lines = field.value.lines();
+                    let first = value_lines.next().unwrap_or("").to_string();
+                    lines_temp.push(Line::from(vec![
+                        Span::styled(field.name.clone(), name_style),
+                        Span::raw("  "),
+                        Span::raw(first),
+                    ]));
+                    for extra in value_lines {
+                        lines_temp.push(Line::from(format!("  {extra}")));
+                    }
+                }
             }
-        }
+            lines_temp
+        }; // Borrow of self is dropped here
+
         if lines.is_empty() {
             lines.push(Line::from(Span::styled(
                 "no readable interface files",

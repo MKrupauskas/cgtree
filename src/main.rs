@@ -1,4 +1,5 @@
 mod cgroup;
+mod data;
 mod list;
 mod tui;
 
@@ -52,15 +53,15 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> anyhow::Result<()> {
     cgroup::ensure_v2(&cli.root)?;
-    let tree = cgroup::scan(&cli.root)?;
+    let data = cgroup::scan(&cli.root)?;
     match cli.command {
-        Some(Command::List { depth, procs }) => list::print(&tree, depth, procs),
-        Some(Command::View) => tui::run(&cli.root, tree)?,
+        Some(Command::List { depth, procs }) => list::print(&data, depth, procs),
+        Some(Command::View) => tui::run(&cli.root, data)?,
         None => {
             if std::io::stdout().is_terminal() {
-                tui::run(&cli.root, tree)?;
+                tui::run(&cli.root, data)?;
             } else {
-                list::print(&tree, None, false);
+                list::print(&data, None, false);
             }
         }
     }

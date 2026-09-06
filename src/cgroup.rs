@@ -1,23 +1,8 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-/// A cgroup directory and its descendants.
-pub struct Node {
-    pub name: String,
-    pub path: PathBuf,
-    /// Number of pids in cgroup.procs; None if the file was unreadable.
-    pub procs: Option<usize>,
-    pub children: Vec<Node>,
-}
-
-impl Node {
-    /// Total number of cgroups in this subtree, including self.
-    pub fn count(&self) -> usize {
-        1 + self.children.iter().map(Node::count).sum::<usize>()
-    }
-}
+use crate::data::CgroupData;
 
 /// Errors unless `root` looks like a cgroup v2 unified hierarchy.
 pub fn ensure_v2(root: &Path) -> Result<()> {
@@ -44,63 +29,16 @@ pub fn ensure_v2(root: &Path) -> Result<()> {
     );
 }
 
-/// Walks the hierarchy under `root` into a tree of Nodes.
-pub fn scan(root: &Path) -> Result<Node> {
-    build(root, root.display().to_string())
+/// Reads the complete cgroup hierarchy with all data.
+pub fn scan(root: &Path) -> Result<CgroupData> {
+    crate::data::read_all(root)
         .with_context(|| format!("failed to scan {}", root.display()))
-}
-
-fn build(path: &Path, name: String) -> Result<Node> {
-    let mut children = Vec::new();
-    // Unreadable directories (e.g. permission denied as non-root) are
-    // treated as leaves rather than aborting the whole scan.
-    if let Ok(entries) = fs::read_dir(path) {
-        for entry in entries.flatten() {
-            if entry.file_type().is_ok_and(|t| t.is_dir()) {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                children.push(build(&entry.path(), name)?);
-            }
-        }
-    }
-    children.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(Node {
-        name,
-        procs: proc_count(path),
-        path: path.to_path_buf(),
-        children,
-    })
-}
-
-fn proc_count(path: &Path) -> Option<usize> {
-    let procs = fs::read_to_string(path.join("cgroup.procs")).ok()?;
-    Some(procs.lines().filter(|l| !l.trim().is_empty()).count())
-}
-
-/// Reads every interface file directly inside a cgroup directory,
-/// sorted by name. Unreadable files report the error as their value.
-pub fn read_fields(path: &Path) -> Vec<(String, String)> {
-    let mut fields = Vec::new();
-    let Ok(entries) = fs::read_dir(path) else {
-        return fields;
-    };
-    for entry in entries.flatten() {
-        if !entry.file_type().is_ok_and(|t| t.is_file()) {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let value = match fs::read_to_string(entry.path()) {
-            Ok(s) => s.trim_end().to_string(),
-            Err(err) => format!("<unreadable: {err}>"),
-        };
-        fields.push((name, value));
-    }
-    fields.sort();
-    fields
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     /// Builds a fake cgroup v2 tree: each dir gets cgroup.controllers and
     /// cgroup.procs with the given number of fake pids.
@@ -122,13 +60,13 @@ mod tests {
         mkgroup(&root.join("init.scope"), 1);
 
         ensure_v2(root).unwrap();
-        let tree = scan(root).unwrap();
-        assert_eq!(tree.count(), 6);
+        let data = scan(root).unwrap();
+        assert_eq!(data.count(), 6);
 
-        let names: Vec<&str> = tree.children.iter().map(|c| c.name.as_str()).collect();
+        let names: Vec<&str> = data.root.children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["init.scope", "system.slice", "user.slice"]);
 
-        let system = &tree.children[1];
+        let system = &data.root.children[1];
         let names: Vec<&str> = system.children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["cron.service", "ssh.service"]);
         assert_eq!(system.children[0].procs, Some(2));
@@ -164,21 +102,5 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("does not exist"), "unexpected error: {err}");
-    }
-
-    #[test]
-    fn reads_fields_sorted() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        mkgroup(root, 1);
-        fs::write(root.join("memory.current"), "4096\n").unwrap();
-
-        let fields = read_fields(root);
-        let names: Vec<&str> = fields.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(
-            names,
-            ["cgroup.controllers", "cgroup.procs", "memory.current"]
-        );
-        assert_eq!(fields[2].1, "4096");
     }
 }
