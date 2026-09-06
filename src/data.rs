@@ -28,11 +28,13 @@ pub struct FieldEntry {
 
 impl CgroupData {
     /// Total number of cgroups in this tree.
+    #[cfg(test)]
     pub fn count(&self) -> usize {
         self.root.count()
     }
 }
 
+#[cfg(test)]
 impl CgroupNode {
     /// Total number of cgroups in this subtree, including self.
     pub fn count(&self) -> usize {

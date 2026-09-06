@@ -11,7 +11,7 @@ use clap::{Parser, Subcommand};
 
 /// Inspect the cgroup v2 hierarchy.
 ///
-/// With no command (or `view`), opens an interactive tree viewer when
+/// With no command (or `explore`), opens an interactive tree viewer when
 /// stdout is a terminal; otherwise prints the tree like `list`.
 #[derive(Parser)]
 #[command(name = "cgtree", version, about)]
@@ -40,8 +40,8 @@ enum Command {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
-    /// Open the interactive viewer
-    View,
+    /// Open the interactive explorer
+    Explore,
 }
 
 fn main() -> ExitCode {
@@ -70,7 +70,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 list::print(&data, depth, &props);
             }
         }
-        Some(Command::View) => tui::run(&cli.root, data)?,
+        Some(Command::Explore) => tui::run(&cli.root, data)?,
         None => {
             if std::io::stdout().is_terminal() {
                 tui::run(&cli.root, data)?;
