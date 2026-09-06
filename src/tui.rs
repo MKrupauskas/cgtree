@@ -7,7 +7,7 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, Ke
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
+use ratatui::widgets::{List, ListItem, ListState};
 use ratatui::{DefaultTerminal, Frame};
 
 use crate::cgroup;
@@ -214,20 +214,12 @@ impl App {
             })
             .collect();
 
-        let title = format!(" cgroups ({}) ", self.data.count());
-        let list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Cyan))
-                    .title(title),
-            )
-            .highlight_style(
-                Style::default()
-                    .bg(Color::Cyan)
-                    .fg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
-            );
+        let list = List::new(items).highlight_style(
+            Style::default()
+                .bg(Color::Cyan)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        );
         let mut state = ListState::default().with_selected(Some(self.selected));
         frame.render_stateful_widget(list, area, &mut state);
     }
