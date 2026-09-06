@@ -160,8 +160,14 @@ impl App {
         });
 
         if expanded && has_children {
-            let mut new_ancestor_lines = ancestor_lines.clone();
-            new_ancestor_lines.push(!is_last);
+            let new_ancestor_lines = if depth > 0 {
+                let mut lines = ancestor_lines.clone();
+                lines.push(!is_last);
+                lines
+            } else {
+                // Root's children (depth 1) should have no indentation
+                Vec::new()
+            };
 
             for (i, child) in node.children.iter().enumerate() {
                 let is_last_child = i == node.children.len() - 1;
