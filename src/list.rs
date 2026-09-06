@@ -40,37 +40,46 @@ fn render_props(node: &CgroupNode, prefix: &str, props: &[String], out: &mut Str
 
     if show_all {
         for field in &node.fields {
-            out.push_str(prefix);
-            out.push_str("    ");
-            out.push_str(&field.name);
-            out.push_str(" = ");
-            // Collapse multi-line values into a single line
-            let value = collapse_value(&field.value);
-            out.push_str(&value);
-            out.push('\n');
+            render_prop(&field.name, &field.value, prefix, out);
         }
     } else {
         for prop in props {
             if let Some(field) = node.fields.iter().find(|f| &f.name == prop) {
-                out.push_str(prefix);
-                out.push_str("    ");
-                out.push_str(prop);
-                out.push_str(" = ");
-                // Collapse multi-line values into a single line
-                let value = collapse_value(&field.value);
-                out.push_str(&value);
-                out.push('\n');
+                render_prop(prop, &field.value, prefix, out);
             }
         }
     }
 }
 
-fn collapse_value(value: &str) -> String {
+fn render_prop(name: &str, value: &str, prefix: &str, out: &mut String) {
     let lines: Vec<&str> = value.lines().collect();
-    if lines.len() <= 1 {
-        value.to_string()
+
+    if lines.is_empty() {
+        // Empty value
+        out.push_str(prefix);
+        out.push_str("    ");
+        out.push_str(name);
+        out.push_str(" = \n");
+    } else if lines.len() == 1 {
+        // Single-line value
+        out.push_str(prefix);
+        out.push_str("    ");
+        out.push_str(name);
+        out.push_str(" = ");
+        out.push_str(value);
+        out.push('\n');
     } else {
-        lines.join("\\n")
+        // Multi-line value: indent each line
+        out.push_str(prefix);
+        out.push_str("    ");
+        out.push_str(name);
+        out.push_str(" =\n");
+        for line in lines {
+            out.push_str(prefix);
+            out.push_str("        ");
+            out.push_str(line);
+            out.push('\n');
+        }
     }
 }
 
@@ -234,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn collapses_multiline_values() {
+    fn displays_multiline_values_with_indentation() {
         let data = CgroupData {
             root: node_with_fields(
                 "/sys/fs/cgroup",
@@ -247,9 +256,9 @@ mod tests {
         let mut out = String::new();
         render(&data, None, false, &[String::from("memory.stat")], &mut out);
 
-        assert!(out.contains("memory.stat = anon 1024\\nfile 2048\\nshmem 512"), "got: {out}");
-        // Ensure no actual newlines within the value
-        let lines: Vec<&str> = out.lines().collect();
-        assert_eq!(lines.len(), 2); // Only root name and the property line
+        assert!(out.contains("memory.stat =\n"), "got: {out}");
+        assert!(out.contains("        anon 1024\n"), "got: {out}");
+        assert!(out.contains("        file 2048\n"), "got: {out}");
+        assert!(out.contains("        shmem 512\n"), "got: {out}");
     }
 }
