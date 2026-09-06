@@ -17,8 +17,8 @@ docker run --rm -it \
 
 # Inside the container:
 cargo build --release
-./target/release/cgtree list --procs
-./target/release/cgtree list --props swap,cpu
+./target/release/cgtree list
+./target/release/cgtree list -p swap,cpu
 ./target/release/cgtree view  # Interactive TUI
 exit
 ```
@@ -38,7 +38,7 @@ docker run --rm -it \
   --cgroupns=host \
   -v "$(pwd)/target/release/cgtree:/usr/local/bin/cgtree:ro" \
   ubuntu:24.04 \
-  cgtree list --procs
+  cgtree list
 ```
 
 ### Interactive TUI Mode
