@@ -23,17 +23,22 @@ docker run --rm -it \
   cgtree list --procs
 ```
 
-**Alternative**: Build and run in a single command:
+### Interactive TUI Mode
+
+To test the interactive viewer:
 
 ```sh
+# Open interactive TUI (requires -it for terminal)
 docker run --rm -it \
   --privileged \
   --cgroupns=host \
-  -v "$(pwd):/workspace" \
-  -w /workspace \
-  rust:latest \
-  bash -c "cargo build --release && /workspace/target/release/cgtree list --procs"
+  -v "$(pwd)/target/release/cgtree:/usr/local/bin/cgtree:ro" \
+  ubuntu:24.04 \
+  cgtree view
+# Or just: cgtree (defaults to view when stdout is a terminal)
 ```
+
+Use `↑`/`↓` or `j`/`k` to navigate, `Enter` to expand/collapse, `Tab` to switch panes, `q` to quit.
 
 Docker Desktop on macOS uses cgroup v2 by default (v4.3.0+).
 
