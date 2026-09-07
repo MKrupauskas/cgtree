@@ -135,7 +135,30 @@ When filters are active, the footer displays the current filter (e.g., `f filter
 
 ## Development
 
+### Running Tests
+
 ```sh
+# Run all tests (unit + integration)
 cargo test
+
+# Run only unit tests (inline tests in src/)
+cargo test --bins
+
+# Run only integration tests (exercises the actual CLI)
+cargo test --test integration_test
+
+# Run with output for debugging
+cargo test -- --nocapture
+
+# Run a specific test
+cargo test test_name
+```
+
+See [`tests/README.md`](tests/README.md) for detailed information about the integration test suite.
+
+### Code Quality
+
+```sh
 cargo clippy --all-targets
+cargo fmt --check
 ```
