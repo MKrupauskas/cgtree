@@ -19,13 +19,13 @@ docker run --rm -it \
 cargo build --release
 ./target/release/cgtree list
 ./target/release/cgtree list -p swap,cpu
-./target/release/cgtree view  # Interactive TUI
+./target/release/cgtree explore  # Interactive TUI
 exit
 ```
 
 ### Interactive TUI Mode
 
-Use `↑`/`↓` or `j`/`k` to navigate, `Enter` to expand/collapse, `Tab` to switch panes, `q` to quit.
+Use `↑`/`↓` or `j`/`k` to navigate, `Enter`/`Space` to expand/collapse, `q` to quit.
 
 Docker Desktop on macOS uses cgroup v2 by default (v4.3.0+).
 

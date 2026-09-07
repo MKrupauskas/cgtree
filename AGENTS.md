@@ -21,7 +21,7 @@ docker run --rm --privileged --cgroupns=host \
 docker run --rm --privileged --cgroupns=host \
   -v "$(pwd)/target:/workspace/target:ro" -w /workspace \
   rust:latest \
-  /workspace/target/release/cgtree list --procs
+  /workspace/target/release/cgtree list --props swap,cpu
 ```
 
 ## Key Points
@@ -34,9 +34,10 @@ docker run --rm --privileged --cgroupns=host \
 ## Code Structure
 
 - `src/main.rs` - CLI entry point and command parsing
-- `src/cgroup.rs` - Core cgroup hierarchy scanning and data structures
+- `src/cgroup.rs` - Core cgroup hierarchy scanning and validation
+- `src/data.rs` - Cgroup data structures and file reading
 - `src/list.rs` - Tree printing for `list` command
-- `src/view/` - Interactive TUI implementation
+- `src/tui.rs` - Interactive explorer implementation
 
 ## Development Workflow
 

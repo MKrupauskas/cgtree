@@ -18,9 +18,9 @@ cargo install --path .
 ## Usage
 
 ```sh
-cgtree                  # interactive viewer (falls back to `list` when piped)
+cgtree                  # interactive explorer (falls back to `list` when piped)
 cgtree list             # print the tree, pipe-friendly
-cgtree list --procs     # include process counts per cgroup
+cgtree list --props swap,cpu  # show specific cgroup properties
 cgtree list --depth 2   # limit tree depth
 cgtree --root PATH ...  # inspect a different hierarchy root (default /sys/fs/cgroup)
 ```
@@ -30,28 +30,26 @@ cgtree --root PATH ...  # inspect a different hierarchy root (default /sys/fs/cg
 Plain `tree`-style output on stdout:
 
 ```
-/sys/fs/cgroup
-├── init.scope (1)
-├── system.slice (0)
-│   ├── cron.service (1)
-│   └── ssh.service (2)
-└── user.slice (0)
-    └── user-1000.slice (0)
+/sys/fs/cgroup/
+├── init.scope
+├── system.slice/
+│   ├── cron.service
+│   └── ssh.service
+└── user.slice/
+    └── user-1000.slice/
 ```
 
-### Interactive viewer
+### Interactive explorer
 
-`cgtree` (or `cgtree view`) opens a two-pane TUI: the cgroup tree on the left,
-and every interface file of the selected cgroup (`cpu.max`, `memory.current`,
-`cgroup.procs`, …) on the right.
+`cgtree` (or `cgtree explore`) opens an interactive TUI showing the cgroup tree
+with expand/collapse navigation.
 
 | Key | Action |
 | --- | --- |
-| `↑`/`↓` or `j`/`k` | move selection / scroll fields |
+| `↑`/`↓` or `j`/`k` | move selection |
 | `→`/`l`, `←`/`h` | expand / collapse (collapse jumps to parent on a leaf) |
 | `Enter`, `Space` | toggle expansion |
 | `g` / `G` | jump to top / bottom |
-| `Tab` | switch between tree and fields pane |
 | `r` | rescan the hierarchy |
 | `q`, `Esc` | quit |
 
