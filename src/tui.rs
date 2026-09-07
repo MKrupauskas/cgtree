@@ -110,6 +110,8 @@ impl App {
                     self.select(parent, &rows);
                 }
             }
+            KeyCode::Char('E') => self.expand_all(),
+            KeyCode::Char('C') => self.collapse_all(),
             _ => {}
         }
         false
@@ -124,6 +126,26 @@ impl App {
             self.data = data;
             let rows = self.rows();
             self.selected = self.selected.min(rows.len().saturating_sub(1));
+        }
+    }
+
+    fn expand_all(&mut self) {
+        let mut all_paths = HashSet::new();
+        Self::collect_all_paths(&self.data.root, &mut all_paths);
+        self.expanded = all_paths;
+    }
+
+    fn collapse_all(&mut self) {
+        self.expanded.clear();
+        self.expanded.insert(self.data.root.path.clone());
+    }
+
+    fn collect_all_paths(node: &CgroupNode, paths: &mut HashSet<PathBuf>) {
+        if !node.children.is_empty() {
+            paths.insert(node.path.clone());
+            for child in &node.children {
+                Self::collect_all_paths(child, paths);
+            }
         }
     }
 
@@ -231,7 +253,7 @@ impl App {
     }
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
-        let help = " q quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · r refresh";
+        let help = " q quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · E expand all · C collapse all · r refresh";
         frame.render_widget(
             Line::from(Span::styled(help, Style::default().fg(Color::DarkGray))),
             area,

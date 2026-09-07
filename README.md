@@ -49,6 +49,8 @@ with expand/collapse navigation.
 | `↑`/`↓` or `j`/`k` | move selection |
 | `→`/`l`, `←`/`h` | expand / collapse (collapse jumps to parent on a leaf) |
 | `Enter`, `Space` | toggle expansion |
+| `E` | expand all |
+| `C` | collapse all |
 | `g` / `G` | jump to top / bottom |
 | `r` | rescan the hierarchy |
 | `q`, `Esc` | quit |
