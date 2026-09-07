@@ -19,13 +19,16 @@ docker run --rm -it \
 cargo build --release
 ./target/release/cgtree list
 ./target/release/cgtree list -p swap,cpu
-./target/release/cgtree explore  # Interactive TUI
+./target/release/cgtree list -p "*"  # Show all fields
+./target/release/cgtree explore  # Interactive TUI with field filtering
 exit
 ```
 
 ### Interactive TUI Mode
 
 Use `↑`/`↓` or `j`/`k` to navigate, `Enter`/`Space` to expand/collapse, `q` to quit.
+
+Press `f` to activate field filtering, then type comma-separated patterns (e.g., `memory,cpu`) and press Enter to display matching fields under each node.
 
 Docker Desktop on macOS uses cgroup v2 by default (v4.3.0+).
 
