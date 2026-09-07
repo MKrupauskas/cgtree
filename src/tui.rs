@@ -56,6 +56,13 @@ enum InputMode {
     Filter,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum PropsMode {
+    Hide,
+    ShowAll,
+    Filtered,
+}
+
 struct App {
     root: PathBuf,
     data: CgroupData,
@@ -65,6 +72,10 @@ struct App {
     input_mode: InputMode,
     filter_input: Input,
     field_patterns: Vec<String>,
+    /// The user's saved filter patterns (set via 'f' filter input)
+    saved_filter_patterns: Vec<String>,
+    /// Current props display mode
+    props_mode: PropsMode,
     /// Flat list of all nodes for indexing
     nodes: Vec<PathBuf>,
 }
@@ -84,6 +95,8 @@ impl App {
             input_mode: InputMode::Normal,
             filter_input: Input::default(),
             field_patterns: Vec::new(),
+            saved_filter_patterns: Vec::new(),
+            props_mode: PropsMode::Hide,
             nodes,
         }
     }
@@ -129,6 +142,9 @@ impl App {
             KeyCode::Char('r') => self.rescan(),
             KeyCode::Char('f') => {
                 self.input_mode = InputMode::Filter;
+            }
+            KeyCode::Char('p') => {
+                self.toggle_props_mode();
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 self.selected = (self.selected + 1).min(num_items.saturating_sub(1));
@@ -200,7 +216,17 @@ impl App {
         match key.code {
             KeyCode::Enter => {
                 let input = self.filter_input.value();
-                self.field_patterns = filter::parse_field_patterns(input);
+                self.saved_filter_patterns = filter::parse_field_patterns(input);
+
+                // Switch to filtered mode if we have patterns, otherwise hide
+                if self.saved_filter_patterns.is_empty() {
+                    self.props_mode = PropsMode::Hide;
+                    self.field_patterns = Vec::new();
+                } else {
+                    self.props_mode = PropsMode::Filtered;
+                    self.field_patterns = self.saved_filter_patterns.clone();
+                }
+
                 self.input_mode = InputMode::Normal;
             }
             KeyCode::Esc => {
@@ -212,6 +238,29 @@ impl App {
             }
         }
         false
+    }
+
+    fn toggle_props_mode(&mut self) {
+        self.props_mode = match self.props_mode {
+            PropsMode::Hide => PropsMode::ShowAll,
+            PropsMode::ShowAll => {
+                // If we have saved filter patterns, go to Filtered mode
+                // Otherwise, cycle back to Hide
+                if !self.saved_filter_patterns.is_empty() {
+                    PropsMode::Filtered
+                } else {
+                    PropsMode::Hide
+                }
+            }
+            PropsMode::Filtered => PropsMode::Hide,
+        };
+
+        // Update field_patterns based on the new mode
+        self.field_patterns = match self.props_mode {
+            PropsMode::Hide => Vec::new(),
+            PropsMode::ShowAll => vec![String::from("*")],
+            PropsMode::Filtered => self.saved_filter_patterns.clone(),
+        };
     }
 
     fn rescan(&mut self) {
@@ -460,14 +509,30 @@ impl App {
     }
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
-        let help = if !self.field_patterns.is_empty() {
-            format!(
-                " q/esc quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · E expand all · C collapse all · f filter [{}] · r refresh",
-                self.field_patterns.join(",")
-            )
-        } else {
-            " q/esc quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · E expand all · C collapse all · f filter · r refresh".to_string()
+        let props_status = match self.props_mode {
+            PropsMode::Hide => "p props:hide",
+            PropsMode::ShowAll => "p props:show-all",
+            PropsMode::Filtered => {
+                if !self.saved_filter_patterns.is_empty() {
+                    "p props:filtered"
+                } else {
+                    "p props:hide"
+                }
+            }
         };
+
+        let filter_info = if !self.saved_filter_patterns.is_empty() {
+            format!("f filter:{}", self.saved_filter_patterns.join(","))
+        } else {
+            "f filter".to_string()
+        };
+
+        let help = format!(
+            " q/esc quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · E expand all · C collapse all · {} · {} · r refresh",
+            props_status,
+            filter_info
+        );
+
         frame.render_widget(
             Line::from(Span::styled(help, Style::default().fg(Color::DarkGray))),
             area,

@@ -1,5 +1,6 @@
 mod cgroup;
 mod data;
+mod filter;
 mod list;
 mod tui;
 
@@ -32,7 +33,9 @@ enum Command {
         #[arg(short, long)]
         depth: Option<usize>,
 
-        /// Show specified cgroup properties (comma-separated, e.g. "memory.swap.max,cpu.weight")
+        /// Show specified cgroup properties (comma-separated, e.g. "memory.swap.max,cpu.weight").
+        /// Patterns use substring matching (e.g. "memory" matches "memory.max", "memory.swap.max").
+        /// Use "*" to show all fields.
         #[arg(short, long, value_delimiter = ',')]
         props: Vec<String>,
 
@@ -40,7 +43,10 @@ enum Command {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
-    /// Open the interactive explorer
+    /// Open the interactive explorer.
+    ///
+    /// Press 'f' to filter and display cgroup fields interactively.
+    /// Supports comma-separated patterns with substring matching (e.g. "memory,cpu").
     Explore,
 }
 

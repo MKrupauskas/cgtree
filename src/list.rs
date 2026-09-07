@@ -1,4 +1,5 @@
 use crate::data::{CgroupData, CgroupNode};
+use crate::filter;
 use anyhow::Result;
 use serde::Serialize;
 
@@ -72,30 +73,13 @@ fn node_to_json(
 }
 
 fn filter_fields(node: &CgroupNode, props: &[String]) -> Vec<JsonField> {
-    if props.is_empty() {
-        return Vec::new();
-    }
-
-    let show_all = props.iter().any(|p| p == "*");
-
-    if show_all {
-        node.fields
-            .iter()
-            .map(|f| JsonField {
-                name: f.name.clone(),
-                value: f.value.clone(),
-            })
-            .collect()
-    } else {
-        node.fields
-            .iter()
-            .filter(|field| props.iter().any(|pattern| field.name.contains(pattern.as_str())))
-            .map(|f| JsonField {
-                name: f.name.clone(),
-                value: f.value.clone(),
-            })
-            .collect()
-    }
+    filter::filter_node_fields(node, props)
+        .into_iter()
+        .map(|f| JsonField {
+            name: f.name.clone(),
+            value: f.value.clone(),
+        })
+        .collect()
 }
 
 /// Renders the tree into a string (separated from print for testing).
@@ -116,32 +100,9 @@ fn label(node: &CgroupNode) -> String {
 }
 
 fn render_props(node: &CgroupNode, prefix: &str, props: &[String], out: &mut String) {
-    if props.is_empty() {
-        return;
-    }
-
-    // Check if user wants all props with "*"
-    let show_all = props.iter().any(|p| p == "*");
-
-    if show_all {
-        for field in &node.fields {
-            render_prop(&field.name, &field.value, prefix, out);
-        }
-    } else {
-        // Collect matching fields (supports substring matching)
-        let mut matched_fields = Vec::new();
-        for field in &node.fields {
-            for pattern in props {
-                if field.name.contains(pattern.as_str()) {
-                    matched_fields.push(field);
-                    break; // Avoid duplicates if multiple patterns match
-                }
-            }
-        }
-
-        for field in matched_fields {
-            render_prop(&field.name, &field.value, prefix, out);
-        }
+    let matched_fields = filter::filter_node_fields(node, props);
+    for field in matched_fields {
+        render_prop(&field.name, &field.value, prefix, out);
     }
 }
 
