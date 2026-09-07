@@ -91,26 +91,36 @@ with expand/collapse navigation and live field filtering.
 | `E` | expand all |
 | `C` | collapse all |
 | `g` / `G` | jump to top / bottom |
+| `?` | show help screen |
 | `r` | rescan the hierarchy |
 | `q`, `Esc` | quit |
 
-**Field Filtering:**
+**Properties Display:**
 
-Press `f` to activate the field filter. This opens an input prompt at the bottom of the screen where you can type comma-separated field name patterns:
+Press `p` to toggle between props display modes:
+- **Hide** - No properties shown (default)
+- **Show all** - Display all cgroup properties for each node
+- **Filtered** - Display only properties matching your saved filter (if you've set one via `f`)
 
-- **Enter** - Apply the filter and display matching fields under each node
+The current mode is shown in the footer (e.g., `p props:hide`, `p props:show-all`, `p props:filtered`).
+
+**Property Filtering:**
+
+Press `f` to activate the property filter. This opens an input prompt at the bottom of the screen where you can type comma-separated property name patterns:
+
+- **Enter** - Apply the filter and display matching properties under each node
 - **Esc** - Cancel filter input
-- **Substring matching** - Patterns match field names by substring (e.g., `memory` matches `memory.max`, `memory.swap.max`, etc.)
-- **Multiple patterns** - Use commas to combine patterns (e.g., `memory,cpu` shows all memory and cpu fields)
-- **Show all** - Use `*` to display all fields
+- **Substring matching** - Patterns match property names by substring (e.g., `memory` matches `memory.max`, `memory.swap.max`, etc.)
+- **Multiple patterns** - Use commas to combine patterns (e.g., `memory,cpu` shows all memory and cpu properties)
+- **Show all** - Use `*` to display all properties
 
 **Examples:**
 
 ```
-f → memory ↵                    # Show all fields containing "memory"
-f → memory,cpu ↵                # Show all memory and cpu fields
-f → swap,cpu.weight ↵           # Show swap-related fields and cpu.weight
-f → * ↵                         # Show all fields
+f → memory ↵                    # Show all properties containing "memory"
+f → memory,cpu ↵                # Show all memory and cpu properties
+f → swap,cpu.weight ↵           # Show swap-related properties and cpu.weight
+f → * ↵                         # Show all properties
 ```
 
 When filters are active, the footer displays the current filter (e.g., `f filter [memory,cpu]`). Press `f` again to change the filter.

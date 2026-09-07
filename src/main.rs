@@ -14,6 +14,10 @@ use clap::{Parser, Subcommand};
 ///
 /// With no command (or `explore`), opens an interactive tree viewer when
 /// stdout is a terminal; otherwise prints the tree like `list`.
+///
+/// For detailed usage of each command, see:
+///   cgtree explore --help
+///   cgtree list --help
 #[derive(Parser)]
 #[command(name = "cgtree", version, about)]
 struct Cli {

@@ -54,6 +54,7 @@ struct DisplayItem {
 enum InputMode {
     Normal,
     Filter,
+    Help,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -129,6 +130,7 @@ impl App {
         match self.input_mode {
             InputMode::Normal => self.handle_normal_key(key),
             InputMode::Filter => self.handle_filter_key(key),
+            InputMode::Help => self.handle_help_key(key),
         }
     }
 
@@ -139,6 +141,9 @@ impl App {
 
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => return true,
+            KeyCode::Char('?') => {
+                self.input_mode = InputMode::Help;
+            }
             KeyCode::Char('r') => self.rescan(),
             KeyCode::Char('f') => {
                 self.input_mode = InputMode::Filter;
@@ -236,6 +241,16 @@ impl App {
                 // Let tui-input handle all other input
                 self.filter_input.handle_event(&Event::Key(key));
             }
+        }
+        false
+    }
+
+    fn handle_help_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('?') => {
+                self.input_mode = InputMode::Normal;
+            }
+            _ => {}
         }
         false
     }
@@ -361,9 +376,15 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
+        if let InputMode::Help = self.input_mode {
+            self.draw_help(frame, frame.area());
+            return;
+        }
+
         let constraints = match self.input_mode {
             InputMode::Normal => vec![Constraint::Min(3), Constraint::Length(1)],
             InputMode::Filter => vec![Constraint::Min(3), Constraint::Length(1), Constraint::Length(1)],
+            InputMode::Help => unreachable!(),
         };
         let areas = Layout::vertical(constraints).split(frame.area());
 
@@ -528,7 +549,7 @@ impl App {
         };
 
         let help = format!(
-            " q/esc quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · E expand all · C collapse all · {} · {} · r refresh",
+            " ? help · q/esc quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · E expand all · C collapse all · {} · {} · r refresh",
             props_status,
             filter_info
         );
@@ -542,7 +563,7 @@ impl App {
     fn draw_filter_input(&mut self, frame: &mut Frame, area: Rect) {
         let width = area.width.max(3) - 3; // For cursor
         let scroll = self.filter_input.visual_scroll(width as usize);
-        let input_text = format!(" Filter: {}", self.filter_input.value());
+        let input_text = format!(" Property filter: {}", self.filter_input.value());
 
         let input_widget = Paragraph::new(input_text)
             .style(Style::default().fg(Color::White))
@@ -552,8 +573,68 @@ impl App {
 
         // Render cursor
         frame.set_cursor_position((
-            area.x + (self.filter_input.visual_cursor().max(scroll) - scroll) as u16 + 9, // " Filter: " = 9 chars
+            area.x + (self.filter_input.visual_cursor().max(scroll) - scroll) as u16 + 18, // " Property filter: " = 18 chars
             area.y,
         ));
+    }
+
+    fn draw_help(&self, frame: &mut Frame, area: Rect) {
+        let props_status = match self.props_mode {
+            PropsMode::Hide => "hide",
+            PropsMode::ShowAll => "show-all",
+            PropsMode::Filtered => "filtered",
+        };
+
+        let filter_status = if !self.saved_filter_patterns.is_empty() {
+            self.saved_filter_patterns.join(",")
+        } else {
+            "none".to_string()
+        };
+
+        let help_text = vec![
+            Line::from(vec![
+                Span::styled("cgtree ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw("- Interactive cgroup hierarchy explorer"),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled("Navigation", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from("  ↑/↓  or  j/k        Move selection up/down"),
+            Line::from("  →/l                 Expand current node"),
+            Line::from("  ←/h                 Collapse current node (or jump to parent)"),
+            Line::from("  Enter  or  Space    Toggle expansion"),
+            Line::from("  E                   Expand all nodes"),
+            Line::from("  C                   Collapse all nodes"),
+            Line::from("  g  /  G             Jump to top / bottom"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Properties Display ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("(mode:{})", props_status), Style::default().fg(Color::Green)),
+            ]),
+            Line::from("  p                   Toggle props display mode:"),
+            Line::from("                        • Hide - No properties shown (default)"),
+            Line::from("                        • Show all - Display all cgroup properties"),
+            Line::from("                        • Filtered - Show properties matching your filter"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Property Filtering ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("(filter:{})", filter_status), Style::default().fg(Color::Green)),
+            ]),
+            Line::from("  f                   Open property filter input"),
+            Line::from("                      Type comma-separated patterns (e.g., memory,cpu)"),
+            Line::from("                      Use * to show all properties"),
+            Line::from("                      Patterns use substring matching"),
+            Line::from("  Enter               Apply filter and switch to filtered mode"),
+            Line::from("  Esc                 Cancel filter input"),
+            Line::from(""),
+            Line::from(Span::styled("Other", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from("  r                   Rescan the cgroup hierarchy"),
+            Line::from("  ?                   Show this help screen"),
+            Line::from("  q  or  Esc          Quit (or close help)"),
+            Line::from(""),
+            Line::from(Span::styled("Press ? or Esc to close this help", Style::default().fg(Color::DarkGray))),
+        ];
+
+        let help = Paragraph::new(help_text);
+        frame.render_widget(help, area);
     }
 }
