@@ -9,9 +9,15 @@ pub fn ensure_v2(root: &Path) -> Result<()> {
     if !root.is_dir() {
         bail!("{} does not exist or is not a directory", root.display());
     }
+
+    // NOTE: We intentionally check for cgroup.controllers file presence instead
+    // of using statfs() with CGROUP2_SUPER_MAGIC (the canonical detection method).
+    // This allows flexibility in inspecting synthetic or test cgroup v2-like
+    // hierarchies that may not be mounted as actual cgroup2 filesystems.
     if root.join("cgroup.controllers").is_file() {
         return Ok(());
     }
+
     // On a v1 host, /sys/fs/cgroup holds one hierarchy per controller,
     // each with a `tasks` file instead of cgroup.controllers.
     let looks_v1 = ["cpu", "memory", "cpuset", "pids", "blkio", "freezer"]
