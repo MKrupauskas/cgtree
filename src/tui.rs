@@ -7,8 +7,10 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, Ke
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{List, ListItem, ListState};
+use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 use ratatui::{DefaultTerminal, Frame};
+use tui_input::Input;
+use tui_input::backend::crossterm::EventHandler;
 
 use crate::cgroup;
 use crate::data::{CgroupData, CgroupNode};
@@ -61,7 +63,7 @@ struct App {
     /// Index of the currently selected display item (includes both cgroup rows and field lines)
     selected: usize,
     input_mode: InputMode,
-    filter_input: String,
+    filter_input: Input,
     field_patterns: Vec<String>,
     /// Flat list of all nodes for indexing
     nodes: Vec<PathBuf>,
@@ -73,13 +75,14 @@ impl App {
         expanded.insert(data.root.path.clone());
         let mut nodes = Vec::new();
         Self::collect_node_paths(&data.root, &mut nodes);
+
         App {
             root,
             data,
             expanded,
             selected: 0,
             input_mode: InputMode::Normal,
-            filter_input: String::new(),
+            filter_input: Input::default(),
             field_patterns: Vec::new(),
             nodes,
         }
@@ -196,19 +199,17 @@ impl App {
     fn handle_filter_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Enter => {
-                self.field_patterns = filter::parse_field_patterns(&self.filter_input);
+                let input = self.filter_input.value();
+                self.field_patterns = filter::parse_field_patterns(input);
                 self.input_mode = InputMode::Normal;
             }
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
             }
-            KeyCode::Char(c) => {
-                self.filter_input.push(c);
+            _ => {
+                // Let tui-input handle all other input
+                self.filter_input.handle_event(&Event::Key(key));
             }
-            KeyCode::Backspace => {
-                self.filter_input.pop();
-            }
-            _ => {}
         }
         false
     }
@@ -473,14 +474,21 @@ impl App {
         );
     }
 
-    fn draw_filter_input(&self, frame: &mut Frame, area: Rect) {
-        let input_text = format!(" Filter (comma-separated): {}", self.filter_input);
-        frame.render_widget(
-            Line::from(vec![
-                Span::styled(input_text, Style::default().fg(Color::White)),
-                Span::styled("█", Style::default().fg(Color::White)),
-            ]),
-            area,
-        );
+    fn draw_filter_input(&mut self, frame: &mut Frame, area: Rect) {
+        let width = area.width.max(3) - 3; // For cursor
+        let scroll = self.filter_input.visual_scroll(width as usize);
+        let input_text = format!(" Filter: {}", self.filter_input.value());
+
+        let input_widget = Paragraph::new(input_text)
+            .style(Style::default().fg(Color::White))
+            .scroll((0, scroll as u16));
+
+        frame.render_widget(input_widget, area);
+
+        // Render cursor
+        frame.set_cursor_position((
+            area.x + (self.filter_input.visual_cursor().max(scroll) - scroll) as u16 + 9, // " Filter: " = 9 chars
+            area.y,
+        ));
     }
 }
