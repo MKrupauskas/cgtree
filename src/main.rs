@@ -1,8 +1,8 @@
-mod cgroup;
-mod data;
+pub(crate) mod cgroup;
+pub(crate) mod data;
 mod filter;
 mod list;
-mod tui;
+pub(crate) mod tui;
 
 use std::io::IsTerminal;
 use std::path::PathBuf;

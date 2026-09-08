@@ -64,7 +64,7 @@ enum PropsMode {
     Filtered,
 }
 
-struct App {
+pub struct App {
     root: PathBuf,
     data: CgroupData,
     expanded: HashSet<PathBuf>,
@@ -82,7 +82,7 @@ struct App {
 }
 
 impl App {
-    fn new(root: PathBuf, data: CgroupData) -> Self {
+    pub fn new(root: PathBuf, data: CgroupData) -> Self {
         let mut expanded = HashSet::new();
         expanded.insert(data.root.path.clone());
         let mut nodes = Vec::new();
@@ -122,7 +122,7 @@ impl App {
     }
 
     /// Returns true when the app should quit.
-    fn handle_key(&mut self, key: KeyEvent) -> bool {
+    pub fn handle_key(&mut self, key: KeyEvent) -> bool {
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             return true;
         }
@@ -375,7 +375,7 @@ impl App {
         }
     }
 
-    fn draw(&mut self, frame: &mut Frame) {
+    pub fn draw(&mut self, frame: &mut Frame) {
         if let InputMode::Help = self.input_mode {
             self.draw_help(frame, frame.area());
             return;
