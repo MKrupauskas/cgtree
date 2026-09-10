@@ -1,8 +1,4 @@
-mod cgroup;
-mod data;
-mod filter;
-mod list;
-mod tui;
+use cgtree::{cgroup, list, tui};
 
 use std::io::IsTerminal;
 use std::path::PathBuf;

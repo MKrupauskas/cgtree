@@ -2,6 +2,9 @@
 name = "cgtree"
 version = "0.1.0"
 edition = "2024"
+# cgtree ships as a binary. The library target exists so the integration
+# tests in `tests/` can drive the explorer; it is not a supported API.
+publish = false
 
 [dependencies]
 anyhow = "1.0.103"
