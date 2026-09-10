@@ -25,12 +25,50 @@ The test suite is organized into categories:
 - **Edge Cases Tests**: Empty hierarchies, deep nesting, many children, concurrent access
 - **CLI Behavior Tests**: Help, version, default behavior
 
+## Explorer (TUI) Tests — `explore_test.rs`
+
+End-to-end tests for the interactive explorer. Each test builds a real cgroup
+v2 hierarchy on disk, scans it with the same code the binary uses, sends real
+key events, and asserts on what a terminal would actually display.
+
+Only the terminal is substituted: ratatui's in-memory `TestBackend` stands in
+for a real TTY, so no PTY or Linux host is required and the tests run anywhere.
+
+### Harness (`tests/harness/mod.rs`)
+
+- **`Fixture`** — builds a synthetic hierarchy; `add(path, fields)` creates a
+  cgroup with the given interface files.
+- **`Fixture::explore(w, h)`** — opens the explorer at a given terminal size.
+- **`Tui::press(c)` / `key(code)` / `type_str(s)`** — send key presses; each one
+  is followed by a redraw, mirroring the real event loop.
+- **`Tui::tree()` / `footer()` / `text()`** — read back the rendered screen. The
+  volatile tempdir path is normalised to `<root>` so assertions stay stable.
+- **`Tui::selected()`** — the highlighted row, found via its selection
+  background: the same cue a user sees on screen.
+
+### Coverage
+
+Initial render, navigation (`jk`, arrows, `g`/`G`, `Home`/`End`, bounds),
+expand/collapse (`Enter`, `Space`, `hl`, arrows, `E`/`C`), tree-guide drawing at
+depth, the props display cycle (`p`), property filtering (`f` — substring,
+comma-separated, `*`, empty, no-match, editing, cancelling), multiline and empty
+property values, the help screen (`?`), quitting (`q`, `Esc`, `Ctrl-C`, and the
+cases where those keys must *not* quit), refresh (`r`), and edge cases such as a
+root-only hierarchy, unknown keys, many siblings, and undersized terminals.
+
+Run them with:
+
+```bash
+cargo test --test explore_test
+```
+
 ## Running Tests
 
 ### Run all integration tests
 
 ```bash
-cargo test --test integration_test
+cargo test --test list_test
+cargo test --test explore_test
 ```
 
 ### Run only unit tests
