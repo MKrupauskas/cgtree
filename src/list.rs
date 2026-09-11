@@ -90,8 +90,7 @@ fn node_to_json(
 }
 
 fn filter_fields(node: &CgroupNode, props: &[String]) -> Vec<JsonField> {
-    filter::filter_node_fields(node, props)
-        .into_iter()
+    filter::matching_fields(&node.fields, props)
         .map(|f| JsonField {
             name: f.name.clone(),
             value: f.value.clone(),
@@ -117,8 +116,7 @@ fn label(node: &CgroupNode) -> String {
 }
 
 fn render_props(node: &CgroupNode, prefix: &str, props: &[String], out: &mut String) {
-    let matched_fields = filter::filter_node_fields(node, props);
-    for field in matched_fields {
+    for field in filter::matching_fields(&node.fields, props) {
         render_prop(&field.name, &field.value, prefix, out);
     }
 }
