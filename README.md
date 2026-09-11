@@ -142,10 +142,11 @@ When filters are active, the footer displays the current filter (e.g., `f filter
 cargo test
 
 # Run only unit tests (inline tests in src/)
-cargo test --bins
+cargo test --lib
 
 # Run only integration tests (exercises the actual CLI)
-cargo test --test integration_test
+cargo test --test list_test
+cargo test --test explore_test
 
 # Run with output for debugging
 cargo test -- --nocapture
@@ -159,6 +160,26 @@ See [`tests/README.md`](tests/README.md) for detailed information about the inte
 ### Code Quality
 
 ```sh
-cargo clippy --all-targets
-cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --all --check
 ```
+
+### Continuous Integration
+
+Every push to `main` and every pull request runs
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+
+| Job | What it checks |
+| --- | --- |
+| Format | `cargo fmt --all --check` |
+| Lint | `cargo clippy --all-targets --all-features -- -D warnings` |
+| Test | Unit + both integration suites, on Linux and macOS |
+| Smoke test | The release binary against the runner's real cgroup v2 hierarchy |
+| Security audit | `cargo audit` against the RustSec advisory database |
+
+The test suite builds synthetic hierarchies in a tempdir, so it runs on any
+platform. The smoke test is the part that needs a real Linux host: it confirms
+`list`, `--format json`, and `--props` still work against `/sys/fs/cgroup`.
+
+`CI` is an aggregate job that passes only when every other job does — use it as
+the single required status check in branch protection.

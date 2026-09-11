@@ -529,7 +529,7 @@ impl App {
                             items.push(DisplayItem {
                                 line: Line::from(vec![
                                     Span::styled(
-                                        format!("{}    ", &field_prefix),
+                                        format!("{field_prefix}    "),
                                         Style::default().fg(Color::DarkGray),
                                     ),
                                     Span::styled(
