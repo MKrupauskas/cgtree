@@ -46,8 +46,7 @@ struct Row<'a> {
     ancestor_lines: Vec<bool>,
 }
 
-/// Represents a display item in the TUI list
-#[derive(Clone)]
+/// One line of the list widget: either a cgroup row or one of its properties.
 struct DisplayItem {
     /// The visual line content
     line: Line<'static>,
@@ -402,7 +401,7 @@ impl App {
         };
         self.selected = self.selected.min(items.len().saturating_sub(1));
 
-        self.draw_tree(frame, areas[0], &items);
+        self.draw_tree(frame, areas[0], items);
         self.draw_footer(frame, areas[1]);
 
         if let InputMode::Filter = self.input_mode {
@@ -437,10 +436,10 @@ impl App {
         items
     }
 
-    fn draw_tree(&self, frame: &mut Frame, area: Rect, display_items: &[DisplayItem]) {
+    fn draw_tree(&self, frame: &mut Frame, area: Rect, display_items: Vec<DisplayItem>) {
         let list_items: Vec<ListItem> = display_items
-            .iter()
-            .map(|item| ListItem::new(item.line.clone()))
+            .into_iter()
+            .map(|item| ListItem::new(item.line))
             .collect();
 
         let list = List::new(list_items).highlight_style(
