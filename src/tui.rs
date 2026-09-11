@@ -94,6 +94,7 @@ impl App {
     /// [`App::handle_key`] and [`App::draw`], so the integration tests can
     /// drive the explorer headlessly against a `TestBackend` — those three
     /// are the same entry points [`App::run`] uses, not test-only scaffolding.
+    #[must_use]
     pub fn new(root: PathBuf, data: CgroupData) -> Self {
         let mut expanded = HashSet::new();
         expanded.insert(data.root.path.clone());
@@ -256,7 +257,7 @@ impl App {
 
     fn handle_help_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
-            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('?') => {
+            KeyCode::Char('q' | '?') | KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
             }
             _ => {}
@@ -270,10 +271,10 @@ impl App {
             PropsMode::ShowAll => {
                 // If we have saved filter patterns, go to Filtered mode
                 // Otherwise, cycle back to Hide
-                if !self.saved_filter_patterns.is_empty() {
-                    PropsMode::Filtered
-                } else {
+                if self.saved_filter_patterns.is_empty() {
                     PropsMode::Hide
+                } else {
+                    PropsMode::Filtered
                 }
             }
             PropsMode::Filtered => PropsMode::Hide,
@@ -329,7 +330,7 @@ impl App {
     /// Flattens the expanded portion of the tree into display order.
     fn rows(&self) -> Vec<Row<'_>> {
         let mut rows = Vec::new();
-        self.flatten(&self.data.root, 0, &mut rows, Vec::new(), true);
+        self.flatten(&self.data.root, 0, &mut rows, &[], true);
         rows
     }
 
@@ -338,7 +339,7 @@ impl App {
         node: &'a CgroupNode,
         depth: usize,
         rows: &mut Vec<Row<'a>>,
-        ancestor_lines: Vec<bool>,
+        ancestor_lines: &[bool],
         is_last: bool,
     ) {
         let expanded = self.expanded.contains(&node.path);
@@ -356,12 +357,12 @@ impl App {
             has_children,
             expanded,
             is_last,
-            ancestor_lines: ancestor_lines.clone(),
+            ancestor_lines: ancestor_lines.to_vec(),
         });
 
         if expanded && has_children {
             let new_ancestor_lines = if depth > 0 {
-                let mut lines = ancestor_lines.clone();
+                let mut lines = ancestor_lines.to_vec();
                 lines.push(!is_last);
                 lines
             } else {
@@ -371,13 +372,7 @@ impl App {
 
             for (i, child) in node.children.iter().enumerate() {
                 let is_last_child = i == node.children.len() - 1;
-                self.flatten(
-                    child,
-                    depth + 1,
-                    rows,
-                    new_ancestor_lines.clone(),
-                    is_last_child,
-                );
+                self.flatten(child, depth + 1, rows, &new_ancestor_lines, is_last_child);
             }
         }
     }
@@ -420,129 +415,21 @@ impl App {
         let mut items: Vec<DisplayItem> = Vec::new();
 
         for (row_index, row) in rows.iter().enumerate() {
-            let mut spans = Vec::new();
-
-            // Draw the tree structure matching the list command
-            if row.depth == 0 {
-                // Root node - no prefix
-                spans.push(Span::raw(row.label.clone()));
-            } else {
-                // Draw ancestor lines
-                for &draw_line in &row.ancestor_lines {
-                    if draw_line {
-                        spans.push(Span::styled("│   ", Style::default().fg(Color::DarkGray)));
-                    } else {
-                        spans.push(Span::raw("    "));
-                    }
-                }
-
-                // Draw the branch connector
-                if row.is_last {
-                    spans.push(Span::styled("└── ", Style::default().fg(Color::DarkGray)));
-                } else {
-                    spans.push(Span::styled("├── ", Style::default().fg(Color::DarkGray)));
-                }
-
-                spans.push(Span::raw(row.label.clone()));
-            }
-
             items.push(DisplayItem {
-                line: Line::from(spans),
+                line: Line::from(tree_spans(row)),
                 cgroup_row_index: Some(row_index),
                 parent_cgroup_row_index: row_index,
             });
 
-            // If we have field patterns, show the matching fields
-            {
-                for field in filter::matching_fields(row.fields, &self.field_patterns) {
-                    let field_prefix = if row.depth == 0 {
-                        "    ".to_string()
-                    } else {
-                        let mut prefix = String::new();
-                        for &draw_line in &row.ancestor_lines {
-                            if draw_line {
-                                prefix.push_str("│   ");
-                            } else {
-                                prefix.push_str("    ");
-                            }
-                        }
-                        prefix.push_str("    ");
-                        prefix
-                    };
-
-                    // Handle multiline values
-                    let lines: Vec<&str> = field.value.lines().collect();
-                    if lines.is_empty() {
-                        items.push(DisplayItem {
-                            line: Line::from(vec![
-                                Span::styled(
-                                    field_prefix.clone(),
-                                    Style::default().fg(Color::DarkGray),
-                                ),
-                                Span::styled(
-                                    field.name.clone(),
-                                    Style::default().fg(Color::Yellow),
-                                ),
-                                Span::raw(" = "),
-                            ]),
-                            cgroup_row_index: None,
-                            parent_cgroup_row_index: row_index,
-                        });
-                    } else if lines.len() == 1 {
-                        items.push(DisplayItem {
-                            line: Line::from(vec![
-                                Span::styled(
-                                    field_prefix.clone(),
-                                    Style::default().fg(Color::DarkGray),
-                                ),
-                                Span::styled(
-                                    field.name.clone(),
-                                    Style::default().fg(Color::Yellow),
-                                ),
-                                Span::raw(" = "),
-                                Span::styled(
-                                    field.value.clone(),
-                                    Style::default().fg(Color::Green),
-                                ),
-                            ]),
-                            cgroup_row_index: None,
-                            parent_cgroup_row_index: row_index,
-                        });
-                    } else {
-                        // First line with field name
-                        items.push(DisplayItem {
-                            line: Line::from(vec![
-                                Span::styled(
-                                    field_prefix.clone(),
-                                    Style::default().fg(Color::DarkGray),
-                                ),
-                                Span::styled(
-                                    field.name.clone(),
-                                    Style::default().fg(Color::Yellow),
-                                ),
-                                Span::raw(" ="),
-                            ]),
-                            cgroup_row_index: None,
-                            parent_cgroup_row_index: row_index,
-                        });
-                        // Subsequent lines indented
-                        for line in lines {
-                            items.push(DisplayItem {
-                                line: Line::from(vec![
-                                    Span::styled(
-                                        format!("{field_prefix}    "),
-                                        Style::default().fg(Color::DarkGray),
-                                    ),
-                                    Span::styled(
-                                        line.to_string(),
-                                        Style::default().fg(Color::Green),
-                                    ),
-                                ]),
-                                cgroup_row_index: None,
-                                parent_cgroup_row_index: row_index,
-                            });
-                        }
-                    }
+            // Properties belonging to this cgroup, indented under it.
+            let prefix = field_prefix(row);
+            for field in filter::matching_fields(row.fields, &self.field_patterns) {
+                for line in field_lines(&prefix, field) {
+                    items.push(DisplayItem {
+                        line,
+                        cgroup_row_index: None,
+                        parent_cgroup_row_index: row_index,
+                    });
                 }
             }
         }
@@ -582,23 +469,22 @@ impl App {
             PropsMode::Hide => "p props:hide",
             PropsMode::ShowAll => "p props:show-all",
             PropsMode::Filtered => {
-                if !self.saved_filter_patterns.is_empty() {
-                    "p props:filtered"
-                } else {
+                if self.saved_filter_patterns.is_empty() {
                     "p props:hide"
+                } else {
+                    "p props:filtered"
                 }
             }
         };
 
-        let filter_info = if !self.saved_filter_patterns.is_empty() {
-            format!("f filter:{}", self.saved_filter_patterns.join(","))
-        } else {
+        let filter_info = if self.saved_filter_patterns.is_empty() {
             "f filter".to_string()
+        } else {
+            format!("f filter:{}", self.saved_filter_patterns.join(","))
         };
 
         let help = format!(
-            " ? help · q/esc quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · E expand all · C collapse all · {} · {} · r refresh",
-            props_status, filter_info
+            " ? help · q/esc quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · E expand all · C collapse all · {props_status} · {filter_info} · r refresh"
         );
 
         frame.render_widget(
@@ -607,20 +493,26 @@ impl App {
         );
     }
 
-    fn draw_filter_input(&mut self, frame: &mut Frame, area: Rect) {
-        let width = area.width.max(3) - 3; // For cursor
-        let scroll = self.filter_input.visual_scroll(width as usize);
-        let input_text = format!(" Property filter: {}", self.filter_input.value());
+    fn draw_filter_input(&self, frame: &mut Frame, area: Rect) {
+        const PROMPT: &str = " Property filter: ";
 
-        let input_widget = Paragraph::new(input_text)
-            .style(Style::default().fg(Color::White))
-            .scroll((0, scroll as u16));
+        // Reserve the prompt plus a column for the cursor itself.
+        let text_width = usize::from(area.width).saturating_sub(PROMPT.len() + 1);
+        let scroll = self.filter_input.visual_scroll(text_width);
 
-        frame.render_widget(input_widget, area);
+        frame.render_widget(
+            Paragraph::new(format!("{PROMPT}{}", self.filter_input.value()))
+                .style(Style::default().fg(Color::White))
+                .scroll((0, u16::try_from(scroll).unwrap_or(u16::MAX))),
+            area,
+        );
 
-        // Render cursor
+        let cursor_col = PROMPT.len() + self.filter_input.visual_cursor().saturating_sub(scroll);
         frame.set_cursor_position((
-            area.x + (self.filter_input.visual_cursor().max(scroll) - scroll) as u16 + 18, // " Property filter: " = 18 chars
+            area.x
+                + u16::try_from(cursor_col)
+                    .unwrap_or(u16::MAX)
+                    .min(area.width - 1),
             area.y,
         ));
     }
@@ -632,10 +524,10 @@ impl App {
             PropsMode::Filtered => "filtered",
         };
 
-        let filter_status = if !self.saved_filter_patterns.is_empty() {
-            self.saved_filter_patterns.join(",")
-        } else {
+        let filter_status = if self.saved_filter_patterns.is_empty() {
             "none".to_string()
+        } else {
+            self.saved_filter_patterns.join(",")
         };
 
         let help_text = vec![
@@ -671,7 +563,7 @@ impl App {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("(mode:{})", props_status),
+                    format!("(mode:{props_status})"),
                     Style::default().fg(Color::Green),
                 ),
             ]),
@@ -688,7 +580,7 @@ impl App {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("(filter:{})", filter_status),
+                    format!("(filter:{filter_status})"),
                     Style::default().fg(Color::Green),
                 ),
             ]),
@@ -718,4 +610,82 @@ impl App {
         let help = Paragraph::new(help_text);
         frame.render_widget(help, area);
     }
+}
+
+const GUIDE: Style = Style::new().fg(Color::DarkGray);
+
+/// The `tree`-style guides and label for one cgroup row.
+fn tree_spans(row: &Row) -> Vec<Span<'static>> {
+    if row.depth == 0 {
+        return vec![Span::raw(row.label.clone())];
+    }
+
+    let mut spans: Vec<Span<'static>> = row
+        .ancestor_lines
+        .iter()
+        .map(|&draw_line| {
+            if draw_line {
+                Span::styled("│   ", GUIDE)
+            } else {
+                Span::raw("    ")
+            }
+        })
+        .collect();
+    spans.push(Span::styled(
+        if row.is_last {
+            "└── "
+        } else {
+            "├── "
+        },
+        GUIDE,
+    ));
+    spans.push(Span::raw(row.label.clone()));
+    spans
+}
+
+/// The indent that a row's property lines sit at.
+fn field_prefix(row: &Row) -> String {
+    let mut prefix = String::new();
+    if row.depth > 0 {
+        for &draw_line in &row.ancestor_lines {
+            prefix.push_str(if draw_line { "│   " } else { "    " });
+        }
+    }
+    prefix.push_str("    ");
+    prefix
+}
+
+/// Renders one property as one or more display lines.
+///
+/// Single-line values sit on the `name = value` line; multi-line values (such
+/// as `memory.stat`) put the name alone and indent the body beneath it.
+fn field_lines(prefix: &str, field: &FieldEntry) -> Vec<Line<'static>> {
+    let name = || Span::styled(field.name.clone(), Style::default().fg(Color::Yellow));
+    let indent = || Span::styled(prefix.to_string(), GUIDE);
+
+    let mut value_lines = field.value.lines();
+    let first = value_lines.next();
+    let is_multiline = field.value.lines().nth(1).is_some();
+
+    if !is_multiline {
+        // Both an empty value and a single-line one render on one line; an
+        // empty one simply has nothing after the `=`.
+        let mut spans = vec![indent(), name(), Span::raw(" = ")];
+        if let Some(value) = first {
+            spans.push(Span::styled(
+                value.to_string(),
+                Style::default().fg(Color::Green),
+            ));
+        }
+        return vec![Line::from(spans)];
+    }
+
+    let mut lines = vec![Line::from(vec![indent(), name(), Span::raw(" =")])];
+    lines.extend(field.value.lines().map(|line| {
+        Line::from(vec![
+            Span::styled(format!("{prefix}    "), GUIDE),
+            Span::styled(line.to_string(), Style::default().fg(Color::Green)),
+        ])
+    }));
+    lines
 }

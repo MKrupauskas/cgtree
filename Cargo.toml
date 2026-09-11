@@ -33,14 +33,34 @@ clap_mangen = "0.3.3"
 [dev-dependencies]
 tempfile = "3.27.0"
 
-# Release packages are built with this profile. A single codegen unit and LTO
-# cost build time, which is fine for a tagged release, and shrink the static
-# musl binary that ships in the .deb.
-[profile.deb]
-inherits = "release"
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+# Lint configuration lives here rather than in crate attributes so that it
+# applies uniformly to the binary, the library, and the test targets.
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Noisy against this codebase's style, and not defects:
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+# Spelling out a path like `std::string::ToString::to_string` reads worse than
+# the closure it replaces.
+redundant_closure_for_method_calls = "allow"
+
+[profile.release]
+# A CLI people install with `cargo install`, and the profile the static musl
+# binary in the .deb is built from: favour a small, fast binary over compile
+# time.
 lto = true
 codegen-units = 1
 strip = true
+
+# Release packages are built with this profile. It exists so the packaging
+# commands can name a profile of their own; the settings all come from
+# `release` above.
+[profile.deb]
+inherits = "release"
 
 [package.metadata.deb]
 # Required by Debian policy. cargo-deb would otherwise fall back to the first
