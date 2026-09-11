@@ -175,10 +175,9 @@ impl App {
                     let row_index = item.parent_cgroup_row_index;
                     if let Some(row) = rows.get(row_index)
                         && row.has_children
+                        && !self.expanded.remove(&row.path)
                     {
-                        if !self.expanded.remove(&row.path) {
-                            self.expanded.insert(row.path.clone());
-                        }
+                        self.expanded.insert(row.path.clone());
                     }
                 }
             }
@@ -201,9 +200,8 @@ impl App {
                         if row.expanded {
                             // Collapse the parent cgroup
                             self.expanded.remove(&row.path);
-                        } else if let Some(parent_idx) = rows[..row_index]
-                            .iter()
-                            .rposition(|r| r.depth < row.depth)
+                        } else if let Some(parent_idx) =
+                            rows[..row_index].iter().rposition(|r| r.depth < row.depth)
                         {
                             // Navigate to the parent row
                             if let Some(parent_display_idx) = display_items
@@ -376,7 +374,13 @@ impl App {
 
             for (i, child) in node.children.iter().enumerate() {
                 let is_last_child = i == node.children.len() - 1;
-                self.flatten(child, depth + 1, rows, new_ancestor_lines.clone(), is_last_child);
+                self.flatten(
+                    child,
+                    depth + 1,
+                    rows,
+                    new_ancestor_lines.clone(),
+                    is_last_child,
+                );
             }
         }
     }
@@ -389,7 +393,11 @@ impl App {
 
         let constraints = match self.input_mode {
             InputMode::Normal => vec![Constraint::Min(3), Constraint::Length(1)],
-            InputMode::Filter => vec![Constraint::Min(3), Constraint::Length(1), Constraint::Length(1)],
+            InputMode::Filter => vec![
+                Constraint::Min(3),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ],
             InputMode::Help => unreachable!(),
         };
         let areas = Layout::vertical(constraints).split(frame.area());
@@ -441,70 +449,97 @@ impl App {
             });
 
             // If we have field patterns, show the matching fields
-            if !self.field_patterns.is_empty() {
-                if let Some(node) = self.find_node(&row.path) {
-                    let fields = filter::filter_node_fields(node, &self.field_patterns);
-                    for field in fields {
-                        let field_prefix = if row.depth == 0 {
-                            "    ".to_string()
-                        } else {
-                            let mut prefix = String::new();
-                            for &draw_line in &row.ancestor_lines {
-                                if draw_line {
-                                    prefix.push_str("│   ");
-                                } else {
-                                    prefix.push_str("    ");
-                                }
+            if !self.field_patterns.is_empty()
+                && let Some(node) = self.find_node(&row.path)
+            {
+                let fields = filter::filter_node_fields(node, &self.field_patterns);
+                for field in fields {
+                    let field_prefix = if row.depth == 0 {
+                        "    ".to_string()
+                    } else {
+                        let mut prefix = String::new();
+                        for &draw_line in &row.ancestor_lines {
+                            if draw_line {
+                                prefix.push_str("│   ");
+                            } else {
+                                prefix.push_str("    ");
                             }
-                            prefix.push_str("    ");
-                            prefix
-                        };
+                        }
+                        prefix.push_str("    ");
+                        prefix
+                    };
 
-                        // Handle multiline values
-                        let lines: Vec<&str> = field.value.lines().collect();
-                        if lines.is_empty() {
+                    // Handle multiline values
+                    let lines: Vec<&str> = field.value.lines().collect();
+                    if lines.is_empty() {
+                        items.push(DisplayItem {
+                            line: Line::from(vec![
+                                Span::styled(
+                                    field_prefix.clone(),
+                                    Style::default().fg(Color::DarkGray),
+                                ),
+                                Span::styled(
+                                    field.name.clone(),
+                                    Style::default().fg(Color::Yellow),
+                                ),
+                                Span::raw(" = "),
+                            ]),
+                            cgroup_row_index: None,
+                            parent_cgroup_row_index: row_index,
+                        });
+                    } else if lines.len() == 1 {
+                        items.push(DisplayItem {
+                            line: Line::from(vec![
+                                Span::styled(
+                                    field_prefix.clone(),
+                                    Style::default().fg(Color::DarkGray),
+                                ),
+                                Span::styled(
+                                    field.name.clone(),
+                                    Style::default().fg(Color::Yellow),
+                                ),
+                                Span::raw(" = "),
+                                Span::styled(
+                                    field.value.clone(),
+                                    Style::default().fg(Color::Green),
+                                ),
+                            ]),
+                            cgroup_row_index: None,
+                            parent_cgroup_row_index: row_index,
+                        });
+                    } else {
+                        // First line with field name
+                        items.push(DisplayItem {
+                            line: Line::from(vec![
+                                Span::styled(
+                                    field_prefix.clone(),
+                                    Style::default().fg(Color::DarkGray),
+                                ),
+                                Span::styled(
+                                    field.name.clone(),
+                                    Style::default().fg(Color::Yellow),
+                                ),
+                                Span::raw(" ="),
+                            ]),
+                            cgroup_row_index: None,
+                            parent_cgroup_row_index: row_index,
+                        });
+                        // Subsequent lines indented
+                        for line in lines {
                             items.push(DisplayItem {
                                 line: Line::from(vec![
-                                    Span::styled(field_prefix.clone(), Style::default().fg(Color::DarkGray)),
-                                    Span::styled(field.name.clone(), Style::default().fg(Color::Yellow)),
-                                    Span::raw(" = "),
+                                    Span::styled(
+                                        format!("{}    ", &field_prefix),
+                                        Style::default().fg(Color::DarkGray),
+                                    ),
+                                    Span::styled(
+                                        line.to_string(),
+                                        Style::default().fg(Color::Green),
+                                    ),
                                 ]),
                                 cgroup_row_index: None,
                                 parent_cgroup_row_index: row_index,
                             });
-                        } else if lines.len() == 1 {
-                            items.push(DisplayItem {
-                                line: Line::from(vec![
-                                    Span::styled(field_prefix.clone(), Style::default().fg(Color::DarkGray)),
-                                    Span::styled(field.name.clone(), Style::default().fg(Color::Yellow)),
-                                    Span::raw(" = "),
-                                    Span::styled(field.value.clone(), Style::default().fg(Color::Green)),
-                                ]),
-                                cgroup_row_index: None,
-                                parent_cgroup_row_index: row_index,
-                            });
-                        } else {
-                            // First line with field name
-                            items.push(DisplayItem {
-                                line: Line::from(vec![
-                                    Span::styled(field_prefix.clone(), Style::default().fg(Color::DarkGray)),
-                                    Span::styled(field.name.clone(), Style::default().fg(Color::Yellow)),
-                                    Span::raw(" ="),
-                                ]),
-                                cgroup_row_index: None,
-                                parent_cgroup_row_index: row_index,
-                            });
-                            // Subsequent lines indented
-                            for line in lines {
-                                items.push(DisplayItem {
-                                    line: Line::from(vec![
-                                        Span::styled(format!("{}    ", &field_prefix), Style::default().fg(Color::DarkGray)),
-                                        Span::styled(line.to_string(), Style::default().fg(Color::Green)),
-                                    ]),
-                                    cgroup_row_index: None,
-                                    parent_cgroup_row_index: row_index,
-                                });
-                            }
                         }
                     }
                 }
@@ -556,8 +591,7 @@ impl App {
 
         let help = format!(
             " ? help · q/esc quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · E expand all · C collapse all · {} · {} · r refresh",
-            props_status,
-            filter_info
+            props_status, filter_info
         );
 
         frame.render_widget(
@@ -599,11 +633,21 @@ impl App {
 
         let help_text = vec![
             Line::from(vec![
-                Span::styled("cgtree ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "cgtree ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("- Interactive cgroup hierarchy explorer"),
             ]),
             Line::from(""),
-            Line::from(Span::styled("Navigation", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "Navigation",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
             Line::from("  ↑/↓  or  j/k        Move selection up/down"),
             Line::from("  →/l                 Expand current node"),
             Line::from("  ←/h                 Collapse current node (or jump to parent)"),
@@ -613,8 +657,16 @@ impl App {
             Line::from("  g  /  G             Jump to top / bottom"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("Properties Display ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("(mode:{})", props_status), Style::default().fg(Color::Green)),
+                Span::styled(
+                    "Properties Display ",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("(mode:{})", props_status),
+                    Style::default().fg(Color::Green),
+                ),
             ]),
             Line::from("  p                   Toggle props display mode:"),
             Line::from("                        • Hide - No properties shown (default)"),
@@ -622,8 +674,16 @@ impl App {
             Line::from("                        • Filtered - Show properties matching your filter"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("Property Filtering ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("(filter:{})", filter_status), Style::default().fg(Color::Green)),
+                Span::styled(
+                    "Property Filtering ",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("(filter:{})", filter_status),
+                    Style::default().fg(Color::Green),
+                ),
             ]),
             Line::from("  f                   Open property filter input"),
             Line::from("                      Type comma-separated patterns (e.g., memory,cpu)"),
@@ -632,12 +692,20 @@ impl App {
             Line::from("  Enter               Apply filter and switch to filtered mode"),
             Line::from("  Esc                 Cancel filter input"),
             Line::from(""),
-            Line::from(Span::styled("Other", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "Other",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
             Line::from("  r                   Rescan the cgroup hierarchy"),
             Line::from("  ?                   Show this help screen"),
             Line::from("  q  or  Esc          Quit (or close help)"),
             Line::from(""),
-            Line::from(Span::styled("Press ? or Esc to close this help", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled(
+                "Press ? or Esc to close this help",
+                Style::default().fg(Color::DarkGray),
+            )),
         ];
 
         let help = Paragraph::new(help_text);

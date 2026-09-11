@@ -4,7 +4,7 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 /// Inspect the cgroup v2 hierarchy.
 ///
@@ -39,15 +39,21 @@ enum Command {
         #[arg(short, long, value_delimiter = ',')]
         props: Vec<String>,
 
-        /// Output format (text or json)
-        #[arg(short, long, default_value = "text")]
-        format: String,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = Format::Text)]
+        format: Format,
     },
     /// Open the interactive explorer.
     ///
     /// Press 'f' to filter and display cgroup fields interactively.
     /// Supports comma-separated patterns with substring matching (e.g. "memory,cpu").
     Explore,
+}
+
+#[derive(Clone, Copy, PartialEq, ValueEnum)]
+enum Format {
+    Text,
+    Json,
 }
 
 fn main() -> ExitCode {
@@ -69,19 +75,16 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             depth,
             props,
             format,
-        }) => {
-            if format == "json" {
-                list::print_json(&data, depth, &props)?;
-            } else {
-                list::print(&data, depth, &props);
-            }
-        }
+        }) => match format {
+            Format::Json => list::print_json(&data, depth, &props)?,
+            Format::Text => list::print(&data, depth, &props)?,
+        },
         Some(Command::Explore) => tui::run(&cli.root, data)?,
         None => {
             if std::io::stdout().is_terminal() {
                 tui::run(&cli.root, data)?;
             } else {
-                list::print(&data, None, &[]);
+                list::print(&data, None, &[])?;
             }
         }
     }

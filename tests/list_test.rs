@@ -459,3 +459,79 @@ fn default_behavior() {
     let expected = format!("{}/\n└── child\n", f.root().display());
     assert_eq!(out, expected);
 }
+
+#[test]
+fn error_invalid_format() {
+    let f = Fixture::new();
+    f.add(".", &[]);
+
+    // An unrecognised --format must be rejected, not silently treated as text.
+    let (out, err, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--format", "bogus"]);
+    assert!(!ok);
+    assert_eq!(out, "");
+    assert!(err.contains("invalid value 'bogus'"), "got: {err}");
+    assert!(err.contains("text"), "got: {err}");
+    assert!(err.contains("json"), "got: {err}");
+}
+
+#[test]
+fn format_is_case_sensitive() {
+    let f = Fixture::new();
+    f.add(".", &[]);
+
+    // "JSON" is not a valid value; accepting it silently as text would hide a typo.
+    let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--format", "JSON"]);
+    assert!(!ok);
+    assert_eq!(out, "");
+}
+
+// ============================================================================
+// Pipe Behaviour
+// ============================================================================
+
+/// `cgtree list | head` must exit quietly rather than panicking on the closed
+/// pipe. Output has to exceed the pipe buffer for the writer to notice at all.
+#[test]
+fn closed_pipe_exits_quietly() {
+    use std::process::Stdio;
+
+    let f = Fixture::new();
+    f.add(".", &[]);
+    for i in 0..400 {
+        let padding = "x".repeat(200);
+        f.add(&format!("g{i:03}"), &[("memory.stat", &padding)]);
+    }
+
+    let bin = env!("CARGO_BIN_EXE_cgtree");
+    for format in ["text", "json"] {
+        let mut child = Command::new(bin)
+            .args([
+                "--root",
+                f.root().to_str().unwrap(),
+                "list",
+                "--props",
+                "*",
+                "--format",
+                format,
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        // Drop the read end immediately: the next large write breaks the pipe.
+        drop(child.stdout.take());
+
+        let output = child.wait_with_output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("panicked"),
+            "{format}: panicked on broken pipe: {stderr}"
+        );
+        assert!(
+            output.status.success(),
+            "{format}: expected clean exit, got {:?}: {stderr}",
+            output.status.code()
+        );
+    }
+}

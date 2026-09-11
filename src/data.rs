@@ -48,14 +48,6 @@ pub fn read_all(root: &Path) -> Result<CgroupData> {
     Ok(CgroupData { root: root_node })
 }
 
-/// Reads just the tree structure without interface files (faster, composable).
-/// Currently unused but kept for future composability.
-#[allow(dead_code)]
-pub fn read_structure_only(root: &Path) -> Result<CgroupData> {
-    let root_node = read_structure_subtree(root, root.display().to_string())?;
-    Ok(CgroupData { root: root_node })
-}
-
 /// Recursively reads a cgroup subtree with all data.
 fn read_subtree(path: &Path, name: String) -> Result<CgroupNode> {
     let mut children = Vec::new();
@@ -74,28 +66,6 @@ fn read_subtree(path: &Path, name: String) -> Result<CgroupNode> {
     Ok(CgroupNode {
         name,
         fields: read_interface_files(path),
-        path: path.to_path_buf(),
-        children,
-    })
-}
-
-/// Recursively reads a cgroup subtree WITHOUT interface files (structure only).
-fn read_structure_subtree(path: &Path, name: String) -> Result<CgroupNode> {
-    let mut children = Vec::new();
-
-    if let Ok(entries) = std::fs::read_dir(path) {
-        for entry in entries.flatten() {
-            if entry.file_type().is_ok_and(|t| t.is_dir()) {
-                let child_name = entry.file_name().to_string_lossy().into_owned();
-                children.push(read_structure_subtree(&entry.path(), child_name)?);
-            }
-        }
-    }
-    children.sort_by(|a, b| a.name.cmp(&b.name));
-
-    Ok(CgroupNode {
-        name,
-        fields: Vec::new(), // No fields in structure-only mode
         path: path.to_path_buf(),
         children,
     })
@@ -159,17 +129,6 @@ mod tests {
         let fields: Vec<&str> = data.root.fields.iter().map(|f| f.name.as_str()).collect();
         assert!(fields.contains(&"cgroup.controllers"));
         assert!(fields.contains(&"memory.current"));
-    }
-
-    #[test]
-    fn structure_only_skips_fields() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        mkgroup(root, 2);
-        fs::write(root.join("memory.current"), "4096\n").unwrap();
-
-        let data = read_structure_only(root).unwrap();
-        assert_eq!(data.root.fields.len(), 0);
     }
 
     #[test]

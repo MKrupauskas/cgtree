@@ -24,7 +24,7 @@ cgtree list                      # print the tree, pipe-friendly
 cgtree list --props swap,cpu     # show specific cgroup properties (comma-separated)
 cgtree list --props "*"          # show all cgroup properties
 cgtree list --depth 2            # limit tree depth
-cgtree list --format json        # output as JSON
+cgtree list --format json        # output as JSON (text or json)
 cgtree --root PATH ...           # inspect a different hierarchy root (default /sys/fs/cgroup)
 ```
 

@@ -1,20 +1,37 @@
+use std::io::{self, Write};
+
 use crate::data::{CgroupData, CgroupNode};
 use crate::filter;
 use anyhow::Result;
 use serde::Serialize;
 
 /// Prints the tree in `tree`-style plain text.
-pub fn print(data: &CgroupData, depth: Option<usize>, props: &[String]) {
+///
+/// A closed downstream reader (`cgtree list | head`) is not an error: the
+/// `BrokenPipe` is swallowed so we exit quietly like other Unix filters
+/// instead of panicking out of `print!`.
+pub fn print(data: &CgroupData, depth: Option<usize>, props: &[String]) -> Result<()> {
     let mut out = String::new();
     render(data, depth, props, &mut out);
-    print!("{out}");
+    write_stdout(out.as_bytes())
 }
 
 /// Prints the tree in JSON format.
 pub fn print_json(data: &CgroupData, depth: Option<usize>, props: &[String]) -> Result<()> {
     let json_data = to_json(data, depth, props);
-    println!("{}", serde_json::to_string_pretty(&json_data)?);
-    Ok(())
+    let mut out = serde_json::to_string_pretty(&json_data)?;
+    out.push('\n');
+    write_stdout(out.as_bytes())
+}
+
+/// Writes to stdout, treating a closed pipe as a normal end of output.
+fn write_stdout(bytes: &[u8]) -> Result<()> {
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+    match handle.write_all(bytes).and_then(|()| handle.flush()) {
+        Err(err) if err.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        other => Ok(other?),
+    }
 }
 
 /// Converts the cgroup data to a JSON-serializable structure.
@@ -197,10 +214,7 @@ mod tests {
                 "/sys/fs/cgroup",
                 vec![
                     node("init.scope", vec![]),
-                    node(
-                        "system.slice",
-                        vec![node("ssh.service", vec![])],
-                    ),
+                    node("system.slice", vec![node("ssh.service", vec![])]),
                 ],
             ),
         }
