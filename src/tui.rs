@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -13,7 +13,7 @@ use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
 use crate::cgroup;
-use crate::data::{CgroupData, CgroupNode};
+use crate::data::{CgroupData, CgroupNode, FieldEntry};
 use crate::filter;
 
 pub fn run(root: &Path, data: CgroupData) -> Result<()> {
@@ -21,16 +21,22 @@ pub fn run(root: &Path, data: CgroupData) -> Result<()> {
         bail!("interactive view needs a terminal; use `cgtree list` when piping");
     }
     let mut app = App::new(root.to_path_buf(), data);
-    let mut terminal = ratatui::init();
+    // `try_init` rather than `init`: the latter panics if the terminal cannot
+    // be set up (e.g. its size is unavailable), which would report a failure
+    // this binary can describe properly as a backtrace instead.
+    let mut terminal = ratatui::try_init().context("failed to initialize terminal")?;
     let result = app.run(&mut terminal);
     ratatui::restore();
     result
 }
 
 /// One visible row of the tree, in display order.
-struct Row {
-    path: PathBuf,
+struct Row<'a> {
+    path: &'a Path,
     label: String,
+    /// The cgroup's interface files, borrowed from the scanned tree so that
+    /// rendering properties does not have to search for the node again.
+    fields: &'a [FieldEntry],
     depth: usize,
     has_children: bool,
     expanded: bool,
@@ -77,8 +83,8 @@ pub struct App {
     saved_filter_patterns: Vec<String>,
     /// Current props display mode
     props_mode: PropsMode,
-    /// Flat list of all nodes for indexing
-    nodes: Vec<PathBuf>,
+    /// Transient message shown in place of the help footer (e.g. a failed rescan).
+    status: Option<String>,
 }
 
 impl App {
@@ -91,8 +97,6 @@ impl App {
     pub fn new(root: PathBuf, data: CgroupData) -> Self {
         let mut expanded = HashSet::new();
         expanded.insert(data.root.path.clone());
-        let mut nodes = Vec::new();
-        Self::collect_node_paths(&data.root, &mut nodes);
 
         App {
             root,
@@ -104,14 +108,7 @@ impl App {
             field_patterns: Vec::new(),
             saved_filter_patterns: Vec::new(),
             props_mode: PropsMode::Hide,
-            nodes,
-        }
-    }
-
-    fn collect_node_paths(node: &CgroupNode, paths: &mut Vec<PathBuf>) {
-        paths.push(node.path.clone());
-        for child in &node.children {
-            Self::collect_node_paths(child, paths);
+            status: None,
         }
     }
 
@@ -141,6 +138,9 @@ impl App {
     }
 
     fn handle_normal_key(&mut self, key: KeyEvent) -> bool {
+        // Any keystroke dismisses a status message; `rescan` re-sets its own.
+        self.status = None;
+
         let rows = self.rows();
         let display_items = self.build_display_items(&rows);
         let num_items = display_items.len();
@@ -170,46 +170,39 @@ impl App {
                 self.selected = num_items.saturating_sub(1);
             }
             KeyCode::Enter | KeyCode::Char(' ') => {
-                // Toggle expansion on the parent cgroup (works for both cgroup rows and field lines)
-                if let Some(item) = display_items.get(self.selected) {
-                    let row_index = item.parent_cgroup_row_index;
-                    if let Some(row) = rows.get(row_index)
-                        && row.has_children
-                        && !self.expanded.remove(&row.path)
-                    {
-                        self.expanded.insert(row.path.clone());
+                if let Some((path, has_children, expanded)) =
+                    self.selected_row(&rows, &display_items)
+                    && has_children
+                {
+                    if expanded {
+                        self.expanded.remove(&path);
+                    } else {
+                        self.expanded.insert(path);
                     }
                 }
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                // Expand the parent cgroup (works for both cgroup rows and field lines)
-                if let Some(item) = display_items.get(self.selected) {
-                    let row_index = item.parent_cgroup_row_index;
-                    if let Some(row) = rows.get(row_index)
-                        && row.has_children
-                    {
-                        self.expanded.insert(row.path.clone());
-                    }
+                if let Some((path, has_children, _)) = self.selected_row(&rows, &display_items)
+                    && has_children
+                {
+                    self.expanded.insert(path);
                 }
             }
             KeyCode::Left | KeyCode::Char('h') => {
-                // Collapse or navigate to parent
+                // Collapse when expanded; on a collapsed row jump to the parent.
                 if let Some(item) = display_items.get(self.selected) {
                     let row_index = item.parent_cgroup_row_index;
                     if let Some(row) = rows.get(row_index) {
                         if row.expanded {
-                            // Collapse the parent cgroup
-                            self.expanded.remove(&row.path);
+                            let path = row.path.to_path_buf();
+                            self.expanded.remove(&path);
                         } else if let Some(parent_idx) =
                             rows[..row_index].iter().rposition(|r| r.depth < row.depth)
-                        {
-                            // Navigate to the parent row
-                            if let Some(parent_display_idx) = display_items
+                            && let Some(parent_display_idx) = display_items
                                 .iter()
                                 .position(|item| item.cgroup_row_index == Some(parent_idx))
-                            {
-                                self.selected = parent_display_idx;
-                            }
+                        {
+                            self.selected = parent_display_idx;
                         }
                     }
                 }
@@ -219,6 +212,18 @@ impl App {
             _ => {}
         }
         false
+    }
+
+    /// The cgroup row the cursor sits on — for a property line, the cgroup it
+    /// belongs to. Returns owned data so callers can mutate `expanded` after.
+    fn selected_row(
+        &self,
+        rows: &[Row<'_>],
+        items: &[DisplayItem],
+    ) -> Option<(PathBuf, bool, bool)> {
+        let item = items.get(self.selected)?;
+        let row = rows.get(item.parent_cgroup_row_index)?;
+        Some((row.path.to_path_buf(), row.has_children, row.expanded))
     }
 
     fn handle_filter_key(&mut self, key: KeyEvent) -> bool {
@@ -282,15 +287,22 @@ impl App {
         };
     }
 
+    /// Re-reads the hierarchy from disk, keeping the current expansion state.
+    ///
+    /// A failed rescan leaves the previous snapshot on screen and reports the
+    /// reason in the footer — silently doing nothing would look like `r` was
+    /// not registered at all.
     fn rescan(&mut self) {
-        if let Ok(data) = cgroup::scan(&self.root) {
-            self.data = data;
-            self.nodes.clear();
-            Self::collect_node_paths(&self.data.root, &mut self.nodes);
-            // Clamp selected to valid range after rescan
-            let rows = self.rows();
-            let display_items = self.build_display_items(&rows);
-            self.selected = self.selected.min(display_items.len().saturating_sub(1));
+        match cgroup::scan(&self.root) {
+            Ok(data) => {
+                self.data = data;
+                self.status = None;
+                // Clamp selection: the refreshed tree may be smaller.
+                let rows = self.rows();
+                let display_items = self.build_display_items(&rows);
+                self.selected = self.selected.min(display_items.len().saturating_sub(1));
+            }
+            Err(err) => self.status = Some(format!("rescan failed: {err}")),
         }
     }
 
@@ -314,34 +326,18 @@ impl App {
         }
     }
 
-    fn find_node<'a>(&'a self, path: &Path) -> Option<&'a CgroupNode> {
-        Self::find_node_recursive(&self.data.root, path)
-    }
-
-    fn find_node_recursive<'a>(node: &'a CgroupNode, path: &Path) -> Option<&'a CgroupNode> {
-        if node.path == path {
-            return Some(node);
-        }
-        for child in &node.children {
-            if let Some(found) = Self::find_node_recursive(child, path) {
-                return Some(found);
-            }
-        }
-        None
-    }
-
     /// Flattens the expanded portion of the tree into display order.
-    fn rows(&self) -> Vec<Row> {
+    fn rows(&self) -> Vec<Row<'_>> {
         let mut rows = Vec::new();
         self.flatten(&self.data.root, 0, &mut rows, Vec::new(), true);
         rows
     }
 
-    fn flatten(
-        &self,
-        node: &CgroupNode,
+    fn flatten<'a>(
+        &'a self,
+        node: &'a CgroupNode,
         depth: usize,
-        rows: &mut Vec<Row>,
+        rows: &mut Vec<Row<'a>>,
         ancestor_lines: Vec<bool>,
         is_last: bool,
     ) {
@@ -349,7 +345,8 @@ impl App {
         let has_children = !node.children.is_empty();
 
         rows.push(Row {
-            path: node.path.clone(),
+            path: &node.path,
+            fields: &node.fields,
             label: if has_children {
                 format!("{}/", node.name)
             } else {
@@ -402,8 +399,15 @@ impl App {
         };
         let areas = Layout::vertical(constraints).split(frame.area());
 
-        let rows = self.rows();
-        self.draw_tree(frame, areas[0], &rows);
+        // Clamp before rendering: the selection may point past the end after a
+        // collapse or a rescan shrank the tree.
+        let items = {
+            let rows = self.rows();
+            self.build_display_items(&rows)
+        };
+        self.selected = self.selected.min(items.len().saturating_sub(1));
+
+        self.draw_tree(frame, areas[0], &items);
         self.draw_footer(frame, areas[1]);
 
         if let InputMode::Filter = self.input_mode {
@@ -449,11 +453,8 @@ impl App {
             });
 
             // If we have field patterns, show the matching fields
-            if !self.field_patterns.is_empty()
-                && let Some(node) = self.find_node(&row.path)
             {
-                let fields = filter::filter_node_fields(node, &self.field_patterns);
-                for field in fields {
+                for field in filter::matching_fields(row.fields, &self.field_patterns) {
                     let field_prefix = if row.depth == 0 {
                         "    ".to_string()
                     } else {
@@ -549,12 +550,7 @@ impl App {
         items
     }
 
-    fn draw_tree(&mut self, frame: &mut Frame, area: Rect, rows: &[Row]) {
-        let display_items = self.build_display_items(rows);
-
-        // Clamp selection to valid range
-        self.selected = self.selected.min(display_items.len().saturating_sub(1));
-
+    fn draw_tree(&self, frame: &mut Frame, area: Rect, display_items: &[DisplayItem]) {
         let list_items: Vec<ListItem> = display_items
             .iter()
             .map(|item| ListItem::new(item.line.clone()))
@@ -571,6 +567,17 @@ impl App {
     }
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
+        if let Some(status) = &self.status {
+            frame.render_widget(
+                Line::from(Span::styled(
+                    format!(" {status}"),
+                    Style::default().fg(Color::Red),
+                )),
+                area,
+            );
+            return;
+        }
+
         let props_status = match self.props_mode {
             PropsMode::Hide => "p props:hide",
             PropsMode::ShowAll => "p props:show-all",
