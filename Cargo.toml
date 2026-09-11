@@ -2,6 +2,12 @@
 name = "cgtree"
 version = "0.1.0"
 edition = "2024"
+# 1.88 is the real floor: ratatui 0.30 requires it, and so do the `let` chains
+# used in the explorer's key handling. Verified with `cargo +1.88.0 check`.
+rust-version = "1.88"
+description = "Inspect the Linux cgroup v2 hierarchy from the command line"
+repository = "https://github.com/MKrupauskas/cgtree"
+license = "MIT"
 # cgtree ships as a binary. The library target exists so the integration
 # tests in `tests/` can drive the explorer; it is not a supported API.
 publish = false
@@ -16,3 +22,25 @@ tui-input = "0.15"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+# Lint configuration lives here rather than in crate attributes so that it
+# applies uniformly to the binary, the library, and the test targets.
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Noisy against this codebase's style, and not defects:
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+# Spelling out a path like `std::string::ToString::to_string` reads worse than
+# the closure it replaces.
+redundant_closure_for_method_calls = "allow"
+
+[profile.release]
+# A CLI people install with `cargo install`: favour a small, fast binary
+# over compile time.
+lto = true
+codegen-units = 1
+strip = true

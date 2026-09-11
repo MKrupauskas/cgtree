@@ -103,12 +103,16 @@ fn read_interface_files(path: &Path) -> Vec<FieldEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fmt::Write as _;
     use std::fs;
 
     fn mkgroup(dir: &Path, procs: usize) {
         fs::create_dir_all(dir).unwrap();
         fs::write(dir.join("cgroup.controllers"), "cpu memory pids\n").unwrap();
-        let pids: String = (0..procs).map(|i| format!("{}\n", 100 + i)).collect();
+        let pids = (0..procs).fold(String::new(), |mut acc, i| {
+            let _ = writeln!(acc, "{}", 100 + i);
+            acc
+        });
         fs::write(dir.join("cgroup.procs"), pids).unwrap();
     }
 

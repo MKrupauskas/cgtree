@@ -14,9 +14,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Fail on warnings everywhere, including build scripts and dependencies'
-  # rebuilds of this crate.
-  RUSTFLAGS: -D warnings
 
 jobs:
   fmt:
@@ -38,6 +35,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      # Lint levels live in `[lints]` in Cargo.toml so they apply to local
+      # builds too; `-D warnings` promotes the pedantic ones to errors in CI.
       - run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
@@ -84,6 +83,17 @@ jobs:
       - name: property filtering
         run: ./target/release/cgtree list --props cpu --depth 1
 
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Keep in sync with `rust-version` in Cargo.toml.
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      # Without this the `rust-version` field is a claim nothing checks.
+      - run: cargo check --all-targets --locked
+
   audit:
     name: Security audit
     runs-on: ubuntu-latest
@@ -99,7 +109,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [fmt, clippy, test, smoke, audit]
+    needs: [fmt, clippy, test, msrv, smoke, audit]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs passed
