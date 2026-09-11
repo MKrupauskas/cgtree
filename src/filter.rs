@@ -1,137 +1,122 @@
-use crate::data::{CgroupNode, FieldEntry};
+use crate::data::FieldEntry;
 
 /// Parses a comma-separated string into field name patterns.
-/// Example: "memory,cpu.weight" -> ["memory", "cpu.weight"]
+/// Example: `memory,cpu.weight` becomes `["memory", "cpu.weight"]`.
 pub fn parse_field_patterns(input: &str) -> Vec<String> {
     input
         .split(',')
-        .map(|s| s.trim())
+        .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .collect()
 }
 
-/// Filters fields from a node based on the given patterns.
-/// - If patterns is empty, returns empty vec
-/// - If patterns contains "*", returns all fields
-/// - Otherwise returns fields that contain any of the patterns as a substring
-pub fn filter_node_fields<'a>(node: &'a CgroupNode, patterns: &[String]) -> Vec<&'a FieldEntry> {
-    if patterns.is_empty() {
-        return Vec::new();
-    }
-
+/// Selects the fields matching the given patterns.
+///
+/// - no patterns selects nothing (properties are opt-in)
+/// - `*` selects every field
+/// - otherwise a field matches when its name contains any pattern as a substring
+pub fn matching_fields<'a>(
+    fields: &'a [FieldEntry],
+    patterns: &'a [String],
+) -> impl Iterator<Item = &'a FieldEntry> {
     let show_all = patterns.iter().any(|p| p == "*");
-
-    if show_all {
-        node.fields.iter().collect()
-    } else {
-        node.fields
-            .iter()
-            .filter(|field| {
-                patterns
-                    .iter()
-                    .any(|pattern| field.name.contains(pattern.as_str()))
-            })
-            .collect()
-    }
+    fields
+        .iter()
+        .filter(move |field| show_all || patterns.iter().any(|p| field.name.contains(p)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
-    fn node_with_fields(name: &str, fields: Vec<(&str, &str)>) -> CgroupNode {
-        CgroupNode {
-            name: name.to_string(),
-            path: PathBuf::from(name),
-            fields: fields
-                .into_iter()
-                .map(|(k, v)| FieldEntry {
-                    name: k.to_string(),
-                    value: v.to_string(),
-                })
-                .collect(),
-            children: vec![],
-        }
+    fn fields(entries: Vec<(&str, &str)>) -> Vec<FieldEntry> {
+        entries
+            .into_iter()
+            .map(|(name, value)| FieldEntry {
+                name: name.to_string(),
+                value: value.to_string(),
+            })
+            .collect()
+    }
+
+    fn matched(entries: Vec<(&str, &str)>, patterns: &[&str]) -> Vec<String> {
+        let fields = fields(entries);
+        let patterns: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();
+        matching_fields(&fields, &patterns)
+            .map(|f| f.name.clone())
+            .collect()
     }
 
     #[test]
     fn parse_empty_string() {
-        let patterns = parse_field_patterns("");
-        assert_eq!(patterns, Vec::<String>::new());
+        assert_eq!(parse_field_patterns(""), Vec::<String>::new());
     }
 
     #[test]
     fn parse_single_pattern() {
-        let patterns = parse_field_patterns("memory");
-        assert_eq!(patterns, vec!["memory"]);
+        assert_eq!(parse_field_patterns("memory"), vec!["memory"]);
     }
 
     #[test]
     fn parse_multiple_patterns() {
-        let patterns = parse_field_patterns("memory,cpu,pids");
-        assert_eq!(patterns, vec!["memory", "cpu", "pids"]);
+        assert_eq!(
+            parse_field_patterns("memory,cpu,pids"),
+            vec!["memory", "cpu", "pids"]
+        );
     }
 
     #[test]
     fn parse_with_whitespace() {
-        let patterns = parse_field_patterns("memory, cpu.weight , pids");
-        assert_eq!(patterns, vec!["memory", "cpu.weight", "pids"]);
+        assert_eq!(
+            parse_field_patterns("memory, cpu.weight , pids"),
+            vec!["memory", "cpu.weight", "pids"]
+        );
     }
 
     #[test]
-    fn filter_empty_patterns() {
-        let node = node_with_fields("test", vec![("memory.max", "max")]);
-        let fields = filter_node_fields(&node, &[]);
-        assert_eq!(fields.len(), 0);
+    fn no_patterns_matches_nothing() {
+        assert!(matched(vec![("memory.max", "max")], &[]).is_empty());
     }
 
     #[test]
-    fn filter_with_star() {
-        let node = node_with_fields(
-            "test",
+    fn star_matches_everything() {
+        let names = matched(
             vec![
                 ("memory.max", "max"),
                 ("cpu.weight", "100"),
                 ("pids.max", "max"),
             ],
+            &["*"],
         );
-        let fields = filter_node_fields(&node, &[String::from("*")]);
-        assert_eq!(fields.len(), 3);
+        assert_eq!(names, ["memory.max", "cpu.weight", "pids.max"]);
     }
 
     #[test]
-    fn filter_by_substring() {
-        let node = node_with_fields(
-            "test",
+    fn matches_by_substring() {
+        let names = matched(
             vec![
                 ("memory.swap.max", "max"),
                 ("memory.swap.current", "0"),
                 ("memory.max", "1073741824"),
                 ("cpu.weight", "100"),
             ],
+            &["swap"],
         );
-        let fields = filter_node_fields(&node, &[String::from("swap")]);
-        assert_eq!(fields.len(), 2);
-        assert!(fields.iter().any(|f| f.name == "memory.swap.max"));
-        assert!(fields.iter().any(|f| f.name == "memory.swap.current"));
+        assert_eq!(names, ["memory.swap.max", "memory.swap.current"]);
     }
 
     #[test]
-    fn filter_by_multiple_patterns() {
-        let node = node_with_fields(
-            "test",
+    fn matches_any_of_several_patterns() {
+        let names = matched(
             vec![
                 ("memory.swap.max", "max"),
                 ("memory.max", "1073741824"),
                 ("cpu.weight", "100"),
                 ("cpu.max", "100000 100000"),
             ],
+            &["swap", "cpu.weight"],
         );
-        let fields = filter_node_fields(&node, &[String::from("swap"), String::from("cpu.weight")]);
-        assert_eq!(fields.len(), 2);
-        assert!(fields.iter().any(|f| f.name == "memory.swap.max"));
-        assert!(fields.iter().any(|f| f.name == "cpu.weight"));
+        assert_eq!(names, ["memory.swap.max", "cpu.weight"]);
     }
 }
