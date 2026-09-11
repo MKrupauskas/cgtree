@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to a PR cancels the run still in flight for it. Pushes to main
+# are never cancelled, so every commit on the default branch keeps a result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # Fail on warnings everywhere, including build scripts and dependencies'
+  # rebuilds of this crate.
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The suite drives synthetic hierarchies in a tempdir rather than the
+        # host's /sys/fs/cgroup, so it is portable. macOS is where development
+        # happens; Linux is where cgtree actually runs.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (including test targets)
+        run: cargo build --all-targets --locked
+      - name: Unit tests
+        run: cargo test --lib --bins --locked
+      - name: Integration tests — list
+        run: cargo test --test list_test --locked
+      - name: Integration tests — explorer
+        run: cargo test --test explore_test --locked
+
+  smoke:
+    name: Smoke test (real cgroup v2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Confirm the runner exposes cgroup v2
+        run: |
+          # cgroup.controllers only exists on a v2 hierarchy; bail loudly if the
+          # runner image ever switches back to v1, rather than silently passing.
+          test -f /sys/fs/cgroup/cgroup.controllers \
+            || { echo "::error::/sys/fs/cgroup is not a cgroup v2 hierarchy"; exit 1; }
+      - run: cargo build --release --locked
+      - name: list against the live hierarchy
+        run: ./target/release/cgtree list --depth 2
+      - name: list --format json emits valid JSON
+        run: ./target/release/cgtree list --format json --depth 2 | jq -e 'type == "object"' > /dev/null
+      - name: property filtering
+        run: ./target/release/cgtree list --props cpu --depth 1
+
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Single required status check: green only when every job above succeeded.
+  # Point branch protection at this instead of maintaining a list that drifts
+  # as the matrix changes.
+  ci:
+    name: CI
+    if: always()
+    needs: [fmt, clippy, test, smoke, audit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all jobs passed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
