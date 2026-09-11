@@ -15,10 +15,7 @@ pub fn parse_field_patterns(input: &str) -> Vec<String> {
 /// - If patterns is empty, returns empty vec
 /// - If patterns contains "*", returns all fields
 /// - Otherwise returns fields that contain any of the patterns as a substring
-pub fn filter_node_fields<'a>(
-    node: &'a CgroupNode,
-    patterns: &[String],
-) -> Vec<&'a FieldEntry> {
+pub fn filter_node_fields<'a>(node: &'a CgroupNode, patterns: &[String]) -> Vec<&'a FieldEntry> {
     if patterns.is_empty() {
         return Vec::new();
     }
@@ -30,7 +27,11 @@ pub fn filter_node_fields<'a>(
     } else {
         node.fields
             .iter()
-            .filter(|field| patterns.iter().any(|pattern| field.name.contains(pattern.as_str())))
+            .filter(|field| {
+                patterns
+                    .iter()
+                    .any(|pattern| field.name.contains(pattern.as_str()))
+            })
             .collect()
     }
 }
@@ -128,10 +129,7 @@ mod tests {
                 ("cpu.max", "100000 100000"),
             ],
         );
-        let fields = filter_node_fields(
-            &node,
-            &[String::from("swap"), String::from("cpu.weight")],
-        );
+        let fields = filter_node_fields(&node, &[String::from("swap"), String::from("cpu.weight")]);
         assert_eq!(fields.len(), 2);
         assert!(fields.iter().any(|f| f.name == "memory.swap.max"));
         assert!(fields.iter().any(|f| f.name == "cpu.weight"));

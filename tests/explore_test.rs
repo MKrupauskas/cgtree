@@ -222,7 +222,10 @@ fn space_toggles_expansion_like_enter() {
     let mut tui = f.explore(80, 12);
 
     tui.press('j').press('j').press(' ');
-    assert!(tui.text().contains("ssh.service"), "space expanded the node");
+    assert!(
+        tui.text().contains("ssh.service"),
+        "space expanded the node"
+    );
 
     tui.press(' ');
     assert!(
@@ -370,12 +373,7 @@ fn siblings_draw_vertical_guides_through_nested_children() {
 
     assert_eq!(
         tui.tree(),
-        vec![
-            "<root>/",
-            "├── first/",
-            "│   └── child",
-            "└── second",
-        ],
+        vec!["<root>/", "├── first/", "│   └── child", "└── second",],
         "the guide continues past first's child down to second"
     );
 }
@@ -478,7 +476,11 @@ fn applying_a_filter_shows_only_matching_properties() {
     let f = Fixture::new();
     f.add(
         "svc",
-        &[("memory.max", "512"), ("cpu.weight", "100"), ("pids.max", "80")],
+        &[
+            ("memory.max", "512"),
+            ("cpu.weight", "100"),
+            ("pids.max", "80"),
+        ],
     );
     let mut tui = f.explore(80, 24);
 
@@ -519,7 +521,11 @@ fn comma_separated_filters_match_any_pattern() {
     let f = Fixture::new();
     f.add(
         "svc",
-        &[("memory.max", "512"), ("cpu.weight", "100"), ("pids.max", "80")],
+        &[
+            ("memory.max", "512"),
+            ("cpu.weight", "100"),
+            ("pids.max", "80"),
+        ],
     );
     let mut tui = f.explore(80, 24);
 
@@ -589,7 +595,10 @@ fn backspace_edits_the_filter_before_applying() {
         .key(KeyCode::Enter);
 
     let text = tui.text();
-    assert!(text.contains("memory.max = 512"), "the corrected filter applied");
+    assert!(
+        text.contains("memory.max = 512"),
+        "the corrected filter applied"
+    );
     assert!(!text.contains("cpu.weight"));
 }
 
@@ -651,13 +660,19 @@ fn p_cycles_through_the_saved_filter_after_one_is_set() {
 #[test]
 fn a_multiline_property_value_renders_across_lines() {
     let f = Fixture::new();
-    f.add("svc", &[("memory.stat", "anon 4096\nfile 8192\nkernel 512")]);
+    f.add(
+        "svc",
+        &[("memory.stat", "anon 4096\nfile 8192\nkernel 512")],
+    );
     let mut tui = f.explore(80, 24);
 
     tui.press('f').type_str("memory.stat").key(KeyCode::Enter);
 
     let text = tui.text();
-    assert!(text.contains("memory.stat ="), "the name is on its own line");
+    assert!(
+        text.contains("memory.stat ="),
+        "the name is on its own line"
+    );
     assert!(text.contains("anon 4096"));
     assert!(text.contains("file 8192"));
     assert!(text.contains("kernel 512"));
@@ -904,7 +919,9 @@ fn r_picks_up_changed_property_values() {
     f.add("svc", &[("memory.current", "1000")]);
     let mut tui = f.explore(80, 20);
 
-    tui.press('f').type_str("memory.current").key(KeyCode::Enter);
+    tui.press('f')
+        .type_str("memory.current")
+        .key(KeyCode::Enter);
     assert!(tui.text().contains("memory.current = 1000"));
 
     std::fs::write(f.root().join("svc/memory.current"), "2000\n").unwrap();

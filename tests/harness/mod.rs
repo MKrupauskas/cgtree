@@ -184,7 +184,6 @@ impl Tui {
     /// Index of the highlighted row within the visible tree rows.
     pub fn selected_index(&self) -> Option<usize> {
         let buffer = self.terminal.backend().buffer();
-        (0..buffer.area.height)
-            .position(|y| buffer[(0, y)].bg == ratatui::style::Color::Cyan)
+        (0..buffer.area.height).position(|y| buffer[(0, y)].bg == ratatui::style::Color::Cyan)
     }
 }

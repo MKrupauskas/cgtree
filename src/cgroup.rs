@@ -37,8 +37,7 @@ pub fn ensure_v2(root: &Path) -> Result<()> {
 
 /// Reads the complete cgroup hierarchy with all data.
 pub fn scan(root: &Path) -> Result<CgroupData> {
-    crate::data::read_all(root)
-        .with_context(|| format!("failed to scan {}", root.display()))
+    crate::data::read_all(root).with_context(|| format!("failed to scan {}", root.display()))
 }
 
 #[cfg(test)]

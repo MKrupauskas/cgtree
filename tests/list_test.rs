@@ -85,8 +85,6 @@ fn list_with_depth() {
     f.add("level1/level2", &[]);
     f.add("level1/level2/level3", &[]);
 
-    
-
     // Depth 1: only show level1
     let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--depth", "1"]);
     assert!(ok);
@@ -105,7 +103,13 @@ fn list_with_props() {
     let f = Fixture::new();
     f.add(".", &[("memory.max", "max"), ("cpu.weight", "100")]);
 
-    let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--props", "memory.max"]);
+    let (out, _, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--props",
+        "memory.max",
+    ]);
     assert!(ok);
 
     // Root without children doesn't get trailing slash
@@ -118,10 +122,15 @@ fn list_props_substring_match() {
     let f = Fixture::new();
     f.add(".", &[("memory.swap.max", "123"), ("memory.max", "456")]);
 
-    let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--props", "swap"]);
+    let (out, _, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--props",
+        "swap",
+    ]);
     assert!(ok);
 
-    
     let expected = format!("{}\n    memory.swap.max = 123\n", f.root().display());
     assert_eq!(out, expected);
 }
@@ -134,7 +143,6 @@ fn list_props_star() {
     let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--props", "*"]);
     assert!(ok);
 
-    
     let expected = format!(
         "{}\n    cgroup.controllers = cpu memory pids\n    cgroup.procs = 1000\n    cpu.weight = 100\n    memory.max = max\n",
         f.root().display()
@@ -147,9 +155,14 @@ fn list_multiline_values() {
     let f = Fixture::new();
     f.add(".", &[("memory.stat", "anon 1024\nfile 2048")]);
 
-    let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--props", "memory.stat"]);
+    let (out, _, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--props",
+        "memory.stat",
+    ]);
     assert!(ok);
-
 
     let expected = format!(
         "{}\n    memory.stat =\n        anon 1024\n        file 2048\n",
@@ -161,15 +174,24 @@ fn list_multiline_values() {
 #[test]
 fn list_multiple_prop_filters() {
     let f = Fixture::new();
-    f.add(".", &[
-        ("memory.max", "max"),
-        ("memory.swap.max", "max"),
-        ("cpu.weight", "100"),
-        ("cpu.max", "100000 100000"),
-        ("pids.max", "max"),
-    ]);
+    f.add(
+        ".",
+        &[
+            ("memory.max", "max"),
+            ("memory.swap.max", "max"),
+            ("cpu.weight", "100"),
+            ("cpu.max", "100000 100000"),
+            ("pids.max", "max"),
+        ],
+    );
 
-    let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--props", "memory.max,cpu.weight"]);
+    let (out, _, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--props",
+        "memory.max,cpu.weight",
+    ]);
     assert!(ok);
 
     // Should show both memory.max and cpu.weight, but not others
@@ -204,7 +226,13 @@ fn json_output() {
     f.add(".", &[]);
     f.add("child", &[]);
 
-    let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--format", "json"]);
+    let (out, _, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--format",
+        "json",
+    ]);
     assert!(ok);
 
     let json: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
@@ -223,7 +251,15 @@ fn json_with_props() {
     let f = Fixture::new();
     f.add(".", &[("memory.max", "max")]);
 
-    let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--format", "json", "--props", "memory.max"]);
+    let (out, _, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--format",
+        "json",
+        "--props",
+        "memory.max",
+    ]);
     assert!(ok);
 
     let json: serde_json::Value = serde_json::from_str(&out).unwrap();
@@ -241,7 +277,15 @@ fn json_respects_depth() {
     f.add("a", &[]);
     f.add("a/b", &[]);
 
-    let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--format", "json", "--depth", "1"]);
+    let (out, _, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--format",
+        "json",
+        "--depth",
+        "1",
+    ]);
     assert!(ok);
 
     let json: serde_json::Value = serde_json::from_str(&out).unwrap();
@@ -264,7 +308,10 @@ fn error_nonexistent_root() {
     let (out, err, ok) = run(&["--root", "/nonexistent/path", "list"]);
     assert!(!ok);
     assert_eq!(out, "");
-    assert_eq!(err, "cgtree: /nonexistent/path does not exist or is not a directory\n");
+    assert_eq!(
+        err,
+        "cgtree: /nonexistent/path does not exist or is not a directory\n"
+    );
 }
 
 #[test]
@@ -276,7 +323,10 @@ fn error_not_cgroup() {
     assert_eq!(out, "");
     assert_eq!(
         err,
-        format!("cgtree: {} does not look like a cgroup v2 hierarchy (no cgroup.controllers file)\n", path)
+        format!(
+            "cgtree: {} does not look like a cgroup v2 hierarchy (no cgroup.controllers file)\n",
+            path
+        )
     );
 }
 
@@ -297,7 +347,10 @@ fn error_cgroup_v1() {
     assert_eq!(out, "");
     assert_eq!(
         err,
-        format!("cgtree: {} is a cgroup v1 hierarchy; cgtree only supports cgroup v2 (unified)\n", root.display())
+        format!(
+            "cgtree: {} is a cgroup v1 hierarchy; cgtree only supports cgroup v2 (unified)\n",
+            root.display()
+        )
     );
 }
 
@@ -306,7 +359,13 @@ fn error_invalid_depth() {
     let f = Fixture::new();
     f.add(".", &[]);
 
-    let (out, err, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--depth", "not-a-number"]);
+    let (out, err, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--depth",
+        "not-a-number",
+    ]);
     assert!(!ok);
     assert_eq!(out, "");
     // Error message contains "invalid" and mentions the value
@@ -325,7 +384,6 @@ fn empty_root() {
 
     let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list"]);
     assert!(ok);
-
 
     assert_eq!(out, format!("{}\n", f.root().display()));
 }
@@ -352,7 +410,9 @@ fn deep_hierarchy() {
     // Create 10 levels deep
     let mut path = String::new();
     for i in 0..10 {
-        if i > 0 { path.push('/'); }
+        if i > 0 {
+            path.push('/');
+        }
         path.push_str(&format!("l{}", i));
         f.add(&path, &[]);
     }
@@ -391,7 +451,13 @@ fn very_long_values() {
     let long_value = "x".repeat(10000);
     f.add(".", &[("long.field", &long_value)]);
 
-    let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--props", "long.field"]);
+    let (out, _, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--props",
+        "long.field",
+    ]);
     assert!(ok);
 
     // Should handle very long values without crashing
@@ -455,7 +521,6 @@ fn default_behavior() {
     let (out, _, ok) = run(&["--root", f.root().to_str().unwrap()]);
     assert!(ok);
 
-    
     let expected = format!("{}/\n└── child\n", f.root().display());
     assert_eq!(out, expected);
 }
@@ -466,7 +531,13 @@ fn error_invalid_format() {
     f.add(".", &[]);
 
     // An unrecognised --format must be rejected, not silently treated as text.
-    let (out, err, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--format", "bogus"]);
+    let (out, err, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--format",
+        "bogus",
+    ]);
     assert!(!ok);
     assert_eq!(out, "");
     assert!(err.contains("invalid value 'bogus'"), "got: {err}");
@@ -480,7 +551,13 @@ fn format_is_case_sensitive() {
     f.add(".", &[]);
 
     // "JSON" is not a valid value; accepting it silently as text would hide a typo.
-    let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list", "--format", "JSON"]);
+    let (out, _, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--format",
+        "JSON",
+    ]);
     assert!(!ok);
     assert_eq!(out, "");
 }
