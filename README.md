@@ -174,6 +174,7 @@ Every push to `main` and every pull request runs
 | Format | `cargo fmt --all --check` |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` |
 | Test | Unit + both integration suites, on Linux and macOS |
+| MSRV | `cargo check` on the oldest supported Rust (1.88) |
 | Smoke test | The release binary against the runner's real cgroup v2 hierarchy |
 | Security audit | `cargo audit` against the RustSec advisory database |
 
