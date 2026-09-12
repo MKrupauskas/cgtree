@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="cgtree logo" width="400"/>
+</p>
+
 # cgtree
 
 Small CLI for inspecting the cgroup hierarchy on a host—useful when you want a
