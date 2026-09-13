@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="assets/logo.png" alt="cgtree logo" width="400"/>
-</p>
+<img src="assets/logo.png" alt="cgtree logo" width="200"/>
 
 # cgtree
 
