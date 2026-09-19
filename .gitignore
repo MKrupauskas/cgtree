@@ -35,3 +35,6 @@ go.work.sum
 # Added by cargo
 
 /target
+
+# Build-script output (man pages, shell completions) and cargo-deb packages
+# both land under /target, which is already ignored above.

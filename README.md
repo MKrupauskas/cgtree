@@ -13,6 +13,22 @@ cgroup v1.
 
 ## Install
 
+### Debian / Ubuntu
+
+Download the `.deb` for your architecture from the
+[latest release](https://github.com/MKrupauskas/cgtree/releases/latest) and
+install it:
+
+```sh
+sudo dpkg -i cgtree_<version>_amd64.deb   # or _arm64.deb
+```
+
+The package is statically linked, so it has no runtime dependencies and works
+across Debian and Ubuntu releases. It installs the binary, man pages
+(`man cgtree`), and bash, zsh and fish completions.
+
+### From source
+
 ```sh
 cargo install --path .
 ```

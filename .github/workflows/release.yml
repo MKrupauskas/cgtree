@@ -1,0 +1,125 @@
+name: Release
+
+# Tagging `v<version>` publishes the release. The tag is the trigger and the
+# source of truth for the version: the build fails if it disagrees with
+# Cargo.toml, rather than shipping a mislabelled package.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  # Allows a dry run against a branch: everything builds and the packages are
+  # uploaded as workflow artifacts, but no GitHub release is created.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deb:
+    name: Debian package (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            target: x86_64-unknown-linux-musl
+          - arch: arm64
+            target: aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # musl keeps the binary static, so one .deb runs on any glibc vintage.
+      # Building against glibc on a current runner would bake in symbols that
+      # older Debian and Ubuntu releases cannot resolve.
+      - name: Install musl cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools
+          # The aarch64 musl target needs a cross linker; the amd64 one does
+          # not, and the package is unavailable on some runner images.
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            sudo apt-get install --yes --no-install-recommends \
+              gcc-aarch64-linux-gnu
+          fi
+
+      - name: Install cargo-deb
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+
+      - name: Check the tag matches Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          manifest="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "cgtree") | .version')"
+          if [ "$tag" != "$manifest" ]; then
+            echo "::error::tag v$tag does not match Cargo.toml version $manifest"
+            exit 1
+          fi
+
+      - name: Build package
+        env:
+          # cargo-deb drives the build itself; the linker must be set here
+          # rather than in .cargo/config.toml so that host builds (and the
+          # build script, which runs natively) are left alone.
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
+        run: cargo deb --target ${{ matrix.target }} --profile deb --locked
+
+      - name: Verify the package installs and runs
+        if: matrix.arch == 'amd64'
+        run: |
+          deb="$(find target/debian -name '*.deb' -print -quit)"
+          sudo dpkg --install "$deb"
+          # The runner is a live cgroup v2 host, so this exercises the real
+          # code path rather than only checking that the binary is present.
+          cgtree --version
+          cgtree list --depth 2
+          cgtree list --format json --depth 1 | jq -e 'type == "object"' > /dev/null
+          test -f /usr/share/man/man1/cgtree.1.gz
+          test -f /usr/share/bash-completion/completions/cgtree
+          sudo dpkg --remove cgtree
+
+      - name: Checksum
+        run: |
+          deb="$(find target/debian -name '*.deb' -print -quit)"
+          sha256sum "$deb" > "$deb.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: target/debian/*.deb*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [deb]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create the release and upload packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version="${GITHUB_REF#refs/tags/}"
+          gh release create "$version" \
+            --title "$version" \
+            --generate-notes \
+            dist/*

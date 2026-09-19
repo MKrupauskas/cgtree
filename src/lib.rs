@@ -11,6 +11,7 @@
 //! the binary and the test suite require.
 
 pub mod cgroup;
+pub mod cli;
 pub mod list;
 pub mod tui;
 
