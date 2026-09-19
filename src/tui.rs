@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -13,7 +13,7 @@ use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
 use crate::cgroup;
-use crate::data::{CgroupData, CgroupNode};
+use crate::data::{CgroupData, CgroupNode, FieldEntry};
 use crate::filter;
 
 pub fn run(root: &Path, data: CgroupData) -> Result<()> {
@@ -21,16 +21,22 @@ pub fn run(root: &Path, data: CgroupData) -> Result<()> {
         bail!("interactive view needs a terminal; use `cgtree list` when piping");
     }
     let mut app = App::new(root.to_path_buf(), data);
-    let mut terminal = ratatui::init();
+    // `try_init` rather than `init`: the latter panics if the terminal cannot
+    // be set up (e.g. its size is unavailable), which would report a failure
+    // this binary can describe properly as a backtrace instead.
+    let mut terminal = ratatui::try_init().context("failed to initialize terminal")?;
     let result = app.run(&mut terminal);
     ratatui::restore();
     result
 }
 
 /// One visible row of the tree, in display order.
-struct Row {
-    path: PathBuf,
+struct Row<'a> {
+    path: &'a Path,
     label: String,
+    /// The cgroup's interface files, borrowed from the scanned tree so that
+    /// rendering properties does not have to search for the node again.
+    fields: &'a [FieldEntry],
     depth: usize,
     has_children: bool,
     expanded: bool,
@@ -40,8 +46,7 @@ struct Row {
     ancestor_lines: Vec<bool>,
 }
 
-/// Represents a display item in the TUI list
-#[derive(Clone)]
+/// One line of the list widget: either a cgroup row or one of its properties.
 struct DisplayItem {
     /// The visual line content
     line: Line<'static>,
@@ -77,8 +82,8 @@ pub struct App {
     saved_filter_patterns: Vec<String>,
     /// Current props display mode
     props_mode: PropsMode,
-    /// Flat list of all nodes for indexing
-    nodes: Vec<PathBuf>,
+    /// Transient message shown in place of the help footer (e.g. a failed rescan).
+    status: Option<String>,
 }
 
 impl App {
@@ -88,11 +93,10 @@ impl App {
     /// [`App::handle_key`] and [`App::draw`], so the integration tests can
     /// drive the explorer headlessly against a `TestBackend` — those three
     /// are the same entry points [`App::run`] uses, not test-only scaffolding.
+    #[must_use]
     pub fn new(root: PathBuf, data: CgroupData) -> Self {
         let mut expanded = HashSet::new();
         expanded.insert(data.root.path.clone());
-        let mut nodes = Vec::new();
-        Self::collect_node_paths(&data.root, &mut nodes);
 
         App {
             root,
@@ -104,14 +108,7 @@ impl App {
             field_patterns: Vec::new(),
             saved_filter_patterns: Vec::new(),
             props_mode: PropsMode::Hide,
-            nodes,
-        }
-    }
-
-    fn collect_node_paths(node: &CgroupNode, paths: &mut Vec<PathBuf>) {
-        paths.push(node.path.clone());
-        for child in &node.children {
-            Self::collect_node_paths(child, paths);
+            status: None,
         }
     }
 
@@ -141,6 +138,9 @@ impl App {
     }
 
     fn handle_normal_key(&mut self, key: KeyEvent) -> bool {
+        // Any keystroke dismisses a status message; `rescan` re-sets its own.
+        self.status = None;
+
         let rows = self.rows();
         let display_items = self.build_display_items(&rows);
         let num_items = display_items.len();
@@ -170,46 +170,39 @@ impl App {
                 self.selected = num_items.saturating_sub(1);
             }
             KeyCode::Enter | KeyCode::Char(' ') => {
-                // Toggle expansion on the parent cgroup (works for both cgroup rows and field lines)
-                if let Some(item) = display_items.get(self.selected) {
-                    let row_index = item.parent_cgroup_row_index;
-                    if let Some(row) = rows.get(row_index)
-                        && row.has_children
-                        && !self.expanded.remove(&row.path)
-                    {
-                        self.expanded.insert(row.path.clone());
+                if let Some((path, has_children, expanded)) =
+                    self.selected_row(&rows, &display_items)
+                    && has_children
+                {
+                    if expanded {
+                        self.expanded.remove(&path);
+                    } else {
+                        self.expanded.insert(path);
                     }
                 }
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                // Expand the parent cgroup (works for both cgroup rows and field lines)
-                if let Some(item) = display_items.get(self.selected) {
-                    let row_index = item.parent_cgroup_row_index;
-                    if let Some(row) = rows.get(row_index)
-                        && row.has_children
-                    {
-                        self.expanded.insert(row.path.clone());
-                    }
+                if let Some((path, has_children, _)) = self.selected_row(&rows, &display_items)
+                    && has_children
+                {
+                    self.expanded.insert(path);
                 }
             }
             KeyCode::Left | KeyCode::Char('h') => {
-                // Collapse or navigate to parent
+                // Collapse when expanded; on a collapsed row jump to the parent.
                 if let Some(item) = display_items.get(self.selected) {
                     let row_index = item.parent_cgroup_row_index;
                     if let Some(row) = rows.get(row_index) {
                         if row.expanded {
-                            // Collapse the parent cgroup
-                            self.expanded.remove(&row.path);
+                            let path = row.path.to_path_buf();
+                            self.expanded.remove(&path);
                         } else if let Some(parent_idx) =
                             rows[..row_index].iter().rposition(|r| r.depth < row.depth)
-                        {
-                            // Navigate to the parent row
-                            if let Some(parent_display_idx) = display_items
+                            && let Some(parent_display_idx) = display_items
                                 .iter()
                                 .position(|item| item.cgroup_row_index == Some(parent_idx))
-                            {
-                                self.selected = parent_display_idx;
-                            }
+                        {
+                            self.selected = parent_display_idx;
                         }
                     }
                 }
@@ -219,6 +212,18 @@ impl App {
             _ => {}
         }
         false
+    }
+
+    /// The cgroup row the cursor sits on — for a property line, the cgroup it
+    /// belongs to. Returns owned data so callers can mutate `expanded` after.
+    fn selected_row(
+        &self,
+        rows: &[Row<'_>],
+        items: &[DisplayItem],
+    ) -> Option<(PathBuf, bool, bool)> {
+        let item = items.get(self.selected)?;
+        let row = rows.get(item.parent_cgroup_row_index)?;
+        Some((row.path.to_path_buf(), row.has_children, row.expanded))
     }
 
     fn handle_filter_key(&mut self, key: KeyEvent) -> bool {
@@ -251,7 +256,7 @@ impl App {
 
     fn handle_help_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
-            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('?') => {
+            KeyCode::Char('q' | '?') | KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
             }
             _ => {}
@@ -265,10 +270,10 @@ impl App {
             PropsMode::ShowAll => {
                 // If we have saved filter patterns, go to Filtered mode
                 // Otherwise, cycle back to Hide
-                if !self.saved_filter_patterns.is_empty() {
-                    PropsMode::Filtered
-                } else {
+                if self.saved_filter_patterns.is_empty() {
                     PropsMode::Hide
+                } else {
+                    PropsMode::Filtered
                 }
             }
             PropsMode::Filtered => PropsMode::Hide,
@@ -282,15 +287,22 @@ impl App {
         };
     }
 
+    /// Re-reads the hierarchy from disk, keeping the current expansion state.
+    ///
+    /// A failed rescan leaves the previous snapshot on screen and reports the
+    /// reason in the footer — silently doing nothing would look like `r` was
+    /// not registered at all.
     fn rescan(&mut self) {
-        if let Ok(data) = cgroup::scan(&self.root) {
-            self.data = data;
-            self.nodes.clear();
-            Self::collect_node_paths(&self.data.root, &mut self.nodes);
-            // Clamp selected to valid range after rescan
-            let rows = self.rows();
-            let display_items = self.build_display_items(&rows);
-            self.selected = self.selected.min(display_items.len().saturating_sub(1));
+        match cgroup::scan(&self.root) {
+            Ok(data) => {
+                self.data = data;
+                self.status = None;
+                // Clamp selection: the refreshed tree may be smaller.
+                let rows = self.rows();
+                let display_items = self.build_display_items(&rows);
+                self.selected = self.selected.min(display_items.len().saturating_sub(1));
+            }
+            Err(err) => self.status = Some(format!("rescan failed: {err}")),
         }
     }
 
@@ -314,42 +326,27 @@ impl App {
         }
     }
 
-    fn find_node<'a>(&'a self, path: &Path) -> Option<&'a CgroupNode> {
-        Self::find_node_recursive(&self.data.root, path)
-    }
-
-    fn find_node_recursive<'a>(node: &'a CgroupNode, path: &Path) -> Option<&'a CgroupNode> {
-        if node.path == path {
-            return Some(node);
-        }
-        for child in &node.children {
-            if let Some(found) = Self::find_node_recursive(child, path) {
-                return Some(found);
-            }
-        }
-        None
-    }
-
     /// Flattens the expanded portion of the tree into display order.
-    fn rows(&self) -> Vec<Row> {
+    fn rows(&self) -> Vec<Row<'_>> {
         let mut rows = Vec::new();
-        self.flatten(&self.data.root, 0, &mut rows, Vec::new(), true);
+        self.flatten(&self.data.root, 0, &mut rows, &[], true);
         rows
     }
 
-    fn flatten(
-        &self,
-        node: &CgroupNode,
+    fn flatten<'a>(
+        &'a self,
+        node: &'a CgroupNode,
         depth: usize,
-        rows: &mut Vec<Row>,
-        ancestor_lines: Vec<bool>,
+        rows: &mut Vec<Row<'a>>,
+        ancestor_lines: &[bool],
         is_last: bool,
     ) {
         let expanded = self.expanded.contains(&node.path);
         let has_children = !node.children.is_empty();
 
         rows.push(Row {
-            path: node.path.clone(),
+            path: &node.path,
+            fields: &node.fields,
             label: if has_children {
                 format!("{}/", node.name)
             } else {
@@ -359,12 +356,12 @@ impl App {
             has_children,
             expanded,
             is_last,
-            ancestor_lines: ancestor_lines.clone(),
+            ancestor_lines: ancestor_lines.to_vec(),
         });
 
         if expanded && has_children {
             let new_ancestor_lines = if depth > 0 {
-                let mut lines = ancestor_lines.clone();
+                let mut lines = ancestor_lines.to_vec();
                 lines.push(!is_last);
                 lines
             } else {
@@ -374,13 +371,7 @@ impl App {
 
             for (i, child) in node.children.iter().enumerate() {
                 let is_last_child = i == node.children.len() - 1;
-                self.flatten(
-                    child,
-                    depth + 1,
-                    rows,
-                    new_ancestor_lines.clone(),
-                    is_last_child,
-                );
+                self.flatten(child, depth + 1, rows, &new_ancestor_lines, is_last_child);
             }
         }
     }
@@ -402,8 +393,15 @@ impl App {
         };
         let areas = Layout::vertical(constraints).split(frame.area());
 
-        let rows = self.rows();
-        self.draw_tree(frame, areas[0], &rows);
+        // Clamp before rendering: the selection may point past the end after a
+        // collapse or a rescan shrank the tree.
+        let items = {
+            let rows = self.rows();
+            self.build_display_items(&rows)
+        };
+        self.selected = self.selected.min(items.len().saturating_sub(1));
+
+        self.draw_tree(frame, areas[0], items);
         self.draw_footer(frame, areas[1]);
 
         if let InputMode::Filter = self.input_mode {
@@ -416,132 +414,21 @@ impl App {
         let mut items: Vec<DisplayItem> = Vec::new();
 
         for (row_index, row) in rows.iter().enumerate() {
-            let mut spans = Vec::new();
-
-            // Draw the tree structure matching the list command
-            if row.depth == 0 {
-                // Root node - no prefix
-                spans.push(Span::raw(row.label.clone()));
-            } else {
-                // Draw ancestor lines
-                for &draw_line in &row.ancestor_lines {
-                    if draw_line {
-                        spans.push(Span::styled("│   ", Style::default().fg(Color::DarkGray)));
-                    } else {
-                        spans.push(Span::raw("    "));
-                    }
-                }
-
-                // Draw the branch connector
-                if row.is_last {
-                    spans.push(Span::styled("└── ", Style::default().fg(Color::DarkGray)));
-                } else {
-                    spans.push(Span::styled("├── ", Style::default().fg(Color::DarkGray)));
-                }
-
-                spans.push(Span::raw(row.label.clone()));
-            }
-
             items.push(DisplayItem {
-                line: Line::from(spans),
+                line: Line::from(tree_spans(row)),
                 cgroup_row_index: Some(row_index),
                 parent_cgroup_row_index: row_index,
             });
 
-            // If we have field patterns, show the matching fields
-            if !self.field_patterns.is_empty()
-                && let Some(node) = self.find_node(&row.path)
-            {
-                let fields = filter::filter_node_fields(node, &self.field_patterns);
-                for field in fields {
-                    let field_prefix = if row.depth == 0 {
-                        "    ".to_string()
-                    } else {
-                        let mut prefix = String::new();
-                        for &draw_line in &row.ancestor_lines {
-                            if draw_line {
-                                prefix.push_str("│   ");
-                            } else {
-                                prefix.push_str("    ");
-                            }
-                        }
-                        prefix.push_str("    ");
-                        prefix
-                    };
-
-                    // Handle multiline values
-                    let lines: Vec<&str> = field.value.lines().collect();
-                    if lines.is_empty() {
-                        items.push(DisplayItem {
-                            line: Line::from(vec![
-                                Span::styled(
-                                    field_prefix.clone(),
-                                    Style::default().fg(Color::DarkGray),
-                                ),
-                                Span::styled(
-                                    field.name.clone(),
-                                    Style::default().fg(Color::Yellow),
-                                ),
-                                Span::raw(" = "),
-                            ]),
-                            cgroup_row_index: None,
-                            parent_cgroup_row_index: row_index,
-                        });
-                    } else if lines.len() == 1 {
-                        items.push(DisplayItem {
-                            line: Line::from(vec![
-                                Span::styled(
-                                    field_prefix.clone(),
-                                    Style::default().fg(Color::DarkGray),
-                                ),
-                                Span::styled(
-                                    field.name.clone(),
-                                    Style::default().fg(Color::Yellow),
-                                ),
-                                Span::raw(" = "),
-                                Span::styled(
-                                    field.value.clone(),
-                                    Style::default().fg(Color::Green),
-                                ),
-                            ]),
-                            cgroup_row_index: None,
-                            parent_cgroup_row_index: row_index,
-                        });
-                    } else {
-                        // First line with field name
-                        items.push(DisplayItem {
-                            line: Line::from(vec![
-                                Span::styled(
-                                    field_prefix.clone(),
-                                    Style::default().fg(Color::DarkGray),
-                                ),
-                                Span::styled(
-                                    field.name.clone(),
-                                    Style::default().fg(Color::Yellow),
-                                ),
-                                Span::raw(" ="),
-                            ]),
-                            cgroup_row_index: None,
-                            parent_cgroup_row_index: row_index,
-                        });
-                        // Subsequent lines indented
-                        for line in lines {
-                            items.push(DisplayItem {
-                                line: Line::from(vec![
-                                    Span::styled(
-                                        format!("{field_prefix}    "),
-                                        Style::default().fg(Color::DarkGray),
-                                    ),
-                                    Span::styled(
-                                        line.to_string(),
-                                        Style::default().fg(Color::Green),
-                                    ),
-                                ]),
-                                cgroup_row_index: None,
-                                parent_cgroup_row_index: row_index,
-                            });
-                        }
-                    }
+            // Properties belonging to this cgroup, indented under it.
+            let prefix = field_prefix(row);
+            for field in filter::matching_fields(row.fields, &self.field_patterns) {
+                for line in field_lines(&prefix, field) {
+                    items.push(DisplayItem {
+                        line,
+                        cgroup_row_index: None,
+                        parent_cgroup_row_index: row_index,
+                    });
                 }
             }
         }
@@ -549,15 +436,10 @@ impl App {
         items
     }
 
-    fn draw_tree(&mut self, frame: &mut Frame, area: Rect, rows: &[Row]) {
-        let display_items = self.build_display_items(rows);
-
-        // Clamp selection to valid range
-        self.selected = self.selected.min(display_items.len().saturating_sub(1));
-
+    fn draw_tree(&self, frame: &mut Frame, area: Rect, display_items: Vec<DisplayItem>) {
         let list_items: Vec<ListItem> = display_items
-            .iter()
-            .map(|item| ListItem::new(item.line.clone()))
+            .into_iter()
+            .map(|item| ListItem::new(item.line))
             .collect();
 
         let list = List::new(list_items).highlight_style(
@@ -571,27 +453,37 @@ impl App {
     }
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
+        if let Some(status) = &self.status {
+            frame.render_widget(
+                Line::from(Span::styled(
+                    format!(" {status}"),
+                    Style::default().fg(Color::Red),
+                )),
+                area,
+            );
+            return;
+        }
+
         let props_status = match self.props_mode {
             PropsMode::Hide => "p props:hide",
             PropsMode::ShowAll => "p props:show-all",
             PropsMode::Filtered => {
-                if !self.saved_filter_patterns.is_empty() {
-                    "p props:filtered"
-                } else {
+                if self.saved_filter_patterns.is_empty() {
                     "p props:hide"
+                } else {
+                    "p props:filtered"
                 }
             }
         };
 
-        let filter_info = if !self.saved_filter_patterns.is_empty() {
-            format!("f filter:{}", self.saved_filter_patterns.join(","))
-        } else {
+        let filter_info = if self.saved_filter_patterns.is_empty() {
             "f filter".to_string()
+        } else {
+            format!("f filter:{}", self.saved_filter_patterns.join(","))
         };
 
         let help = format!(
-            " ? help · q/esc quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · E expand all · C collapse all · {} · {} · r refresh",
-            props_status, filter_info
+            " ? help · q/esc quit · ↑↓/jk move · ←→/hl collapse/expand · enter/space toggle · E expand all · C collapse all · {props_status} · {filter_info} · r refresh"
         );
 
         frame.render_widget(
@@ -600,20 +492,26 @@ impl App {
         );
     }
 
-    fn draw_filter_input(&mut self, frame: &mut Frame, area: Rect) {
-        let width = area.width.max(3) - 3; // For cursor
-        let scroll = self.filter_input.visual_scroll(width as usize);
-        let input_text = format!(" Property filter: {}", self.filter_input.value());
+    fn draw_filter_input(&self, frame: &mut Frame, area: Rect) {
+        const PROMPT: &str = " Property filter: ";
 
-        let input_widget = Paragraph::new(input_text)
-            .style(Style::default().fg(Color::White))
-            .scroll((0, scroll as u16));
+        // Reserve the prompt plus a column for the cursor itself.
+        let text_width = usize::from(area.width).saturating_sub(PROMPT.len() + 1);
+        let scroll = self.filter_input.visual_scroll(text_width);
 
-        frame.render_widget(input_widget, area);
+        frame.render_widget(
+            Paragraph::new(format!("{PROMPT}{}", self.filter_input.value()))
+                .style(Style::default().fg(Color::White))
+                .scroll((0, u16::try_from(scroll).unwrap_or(u16::MAX))),
+            area,
+        );
 
-        // Render cursor
+        let cursor_col = PROMPT.len() + self.filter_input.visual_cursor().saturating_sub(scroll);
         frame.set_cursor_position((
-            area.x + (self.filter_input.visual_cursor().max(scroll) - scroll) as u16 + 18, // " Property filter: " = 18 chars
+            area.x
+                + u16::try_from(cursor_col)
+                    .unwrap_or(u16::MAX)
+                    .min(area.width - 1),
             area.y,
         ));
     }
@@ -625,10 +523,10 @@ impl App {
             PropsMode::Filtered => "filtered",
         };
 
-        let filter_status = if !self.saved_filter_patterns.is_empty() {
-            self.saved_filter_patterns.join(",")
-        } else {
+        let filter_status = if self.saved_filter_patterns.is_empty() {
             "none".to_string()
+        } else {
+            self.saved_filter_patterns.join(",")
         };
 
         let help_text = vec![
@@ -664,7 +562,7 @@ impl App {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("(mode:{})", props_status),
+                    format!("(mode:{props_status})"),
                     Style::default().fg(Color::Green),
                 ),
             ]),
@@ -681,7 +579,7 @@ impl App {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("(filter:{})", filter_status),
+                    format!("(filter:{filter_status})"),
                     Style::default().fg(Color::Green),
                 ),
             ]),
@@ -711,4 +609,82 @@ impl App {
         let help = Paragraph::new(help_text);
         frame.render_widget(help, area);
     }
+}
+
+const GUIDE: Style = Style::new().fg(Color::DarkGray);
+
+/// The `tree`-style guides and label for one cgroup row.
+fn tree_spans(row: &Row) -> Vec<Span<'static>> {
+    if row.depth == 0 {
+        return vec![Span::raw(row.label.clone())];
+    }
+
+    let mut spans: Vec<Span<'static>> = row
+        .ancestor_lines
+        .iter()
+        .map(|&draw_line| {
+            if draw_line {
+                Span::styled("│   ", GUIDE)
+            } else {
+                Span::raw("    ")
+            }
+        })
+        .collect();
+    spans.push(Span::styled(
+        if row.is_last {
+            "└── "
+        } else {
+            "├── "
+        },
+        GUIDE,
+    ));
+    spans.push(Span::raw(row.label.clone()));
+    spans
+}
+
+/// The indent that a row's property lines sit at.
+fn field_prefix(row: &Row) -> String {
+    let mut prefix = String::new();
+    if row.depth > 0 {
+        for &draw_line in &row.ancestor_lines {
+            prefix.push_str(if draw_line { "│   " } else { "    " });
+        }
+    }
+    prefix.push_str("    ");
+    prefix
+}
+
+/// Renders one property as one or more display lines.
+///
+/// Single-line values sit on the `name = value` line; multi-line values (such
+/// as `memory.stat`) put the name alone and indent the body beneath it.
+fn field_lines(prefix: &str, field: &FieldEntry) -> Vec<Line<'static>> {
+    let name = || Span::styled(field.name.clone(), Style::default().fg(Color::Yellow));
+    let indent = || Span::styled(prefix.to_string(), GUIDE);
+
+    let mut value_lines = field.value.lines();
+    let first = value_lines.next();
+    let is_multiline = field.value.lines().nth(1).is_some();
+
+    if !is_multiline {
+        // Both an empty value and a single-line one render on one line; an
+        // empty one simply has nothing after the `=`.
+        let mut spans = vec![indent(), name(), Span::raw(" = ")];
+        if let Some(value) = first {
+            spans.push(Span::styled(
+                value.to_string(),
+                Style::default().fg(Color::Green),
+            ));
+        }
+        return vec![Line::from(spans)];
+    }
+
+    let mut lines = vec![Line::from(vec![indent(), name(), Span::raw(" =")])];
+    lines.extend(field.value.lines().map(|line| {
+        Line::from(vec![
+            Span::styled(format!("{prefix}    "), GUIDE),
+            Span::styled(line.to_string(), Style::default().fg(Color::Green)),
+        ])
+    }));
+    lines
 }

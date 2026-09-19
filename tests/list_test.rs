@@ -37,7 +37,7 @@ impl Fixture {
         fs::write(dir.join("cgroup.controllers"), "cpu memory pids\n").unwrap();
         fs::write(dir.join("cgroup.procs"), "1000\n").unwrap();
         for (name, value) in fields {
-            fs::write(dir.join(name), format!("{}\n", value)).unwrap();
+            fs::write(dir.join(name), format!("{value}\n")).unwrap();
         }
     }
 }
@@ -324,8 +324,7 @@ fn error_not_cgroup() {
     assert_eq!(
         err,
         format!(
-            "cgtree: {} does not look like a cgroup v2 hierarchy (no cgroup.controllers file)\n",
-            path
+            "cgtree: {path} does not look like a cgroup v2 hierarchy (no cgroup.controllers file)\n"
         )
     );
 }
@@ -408,13 +407,10 @@ fn deep_hierarchy() {
     f.add(".", &[]);
 
     // Create 10 levels deep
-    let mut path = String::new();
+    let mut components: Vec<String> = Vec::new();
     for i in 0..10 {
-        if i > 0 {
-            path.push('/');
-        }
-        path.push_str(&format!("l{}", i));
-        f.add(&path, &[]);
+        components.push(format!("l{i}"));
+        f.add(&components.join("/"), &[]);
     }
 
     let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list"]);
@@ -428,7 +424,7 @@ fn many_children() {
     f.add(".", &[]);
 
     for i in 0..50 {
-        f.add(&format!("child{:02}", i), &[]);
+        f.add(&format!("child{i:02}"), &[]);
     }
 
     let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list"]);

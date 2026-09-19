@@ -14,9 +14,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Fail on warnings everywhere, including build scripts and dependencies'
-  # rebuilds of this crate.
-  RUSTFLAGS: -D warnings
 
 jobs:
   fmt:
@@ -38,6 +35,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      # Lint levels live in `[lints]` in Cargo.toml so they apply to local
+      # builds too; `-D warnings` promotes the pedantic ones to errors in CI.
       - run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
