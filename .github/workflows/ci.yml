@@ -87,6 +87,12 @@ jobs:
   audit:
     name: Security audit
     runs-on: ubuntu-latest
+    # audit-check reports findings by creating a check run, which the default
+    # read-only token cannot do; without this it fails on any advisory rather
+    # than on an actual vulnerability.
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v7
       - uses: rustsec/audit-check@v2
