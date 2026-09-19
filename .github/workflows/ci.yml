@@ -85,14 +85,30 @@ jobs:
         run: ./target/release/cgtree list --props cpu --depth 1
 
   package:
-    name: Debian package
-    runs-on: ubuntu-latest
+    name: Debian package (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          # Native arm64 runners are free for public repositories, so the
+          # package is built on the architecture it targets and the smoke test
+          # below actually executes the binary — a cross-compiled build could
+          # only be linked, not run.
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-musl
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
       - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends musl-tools
       - uses: taiki-e/install-action@v2
         with:
@@ -100,11 +116,13 @@ jobs:
       # Catches packaging regressions here rather than at tag time, when the
       # release workflow would be the first thing to notice.
       - name: Build the package
-        run: cargo deb --target x86_64-unknown-linux-musl --profile deb --locked
+        run: cargo deb --target ${{ matrix.target }} --profile deb --locked
       - name: Install it and check it runs
         run: |
           sudo dpkg --install target/debian/*.deb
           cgtree --version
+          # Both runners are live cgroup v2 hosts, so this exercises the real
+          # code path rather than only checking the binary is present.
           cgtree list --depth 2
           test -f /usr/share/man/man1/cgtree.1.gz
           test -f /usr/share/bash-completion/completions/cgtree

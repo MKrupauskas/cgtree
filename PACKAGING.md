@@ -19,16 +19,23 @@ git push origin v0.2.0
 ```
 
 `.github/workflows/release.yml` then builds a `.deb` for amd64 and arm64,
-installs and smoke-tests the amd64 one on the runner's live cgroup v2
-hierarchy, and publishes both packages plus SHA256 checksums to a GitHub
-release.
+each on a native runner (`ubuntu-latest` and `ubuntu-24.04-arm`, the latter
+free for public repositories). Each package is installed and smoke-tested on
+its own runner's live cgroup v2 hierarchy, then both are published with
+SHA256 checksums to a GitHub release.
+
+Building natively rather than cross-compiling means no cross-linker to
+configure, and the smoke test actually executes the binary it just built — a
+cross-compiled arm64 package could only be linked, not run.
 
 `workflow_dispatch` runs everything except the publish step, which is the way
 to test packaging changes without cutting a release.
 
 ## Building locally
 
-`cargo-deb` needs Linux, so on macOS build in a container:
+CI builds both architectures on every pull request, so local packaging builds
+are only needed when iterating on the packaging itself. `cargo-deb` needs
+Linux, so on macOS build in a container:
 
 ```sh
 docker run --rm -v "$(pwd):/w" -w /w rust:latest bash -c '

@@ -19,14 +19,19 @@ env:
 jobs:
   deb:
     name: Debian package (${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
+            runner: ubuntu-latest
             target: x86_64-unknown-linux-musl
+          # Native arm64 runners are free for public repositories. Building on
+          # the target architecture avoids a cross-linker and, more usefully,
+          # lets the verification step below actually run the binary.
           - arch: arm64
+            runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
     steps:
       - uses: actions/checkout@v7
@@ -37,21 +42,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: ${{ matrix.arch }}
 
       # musl keeps the binary static, so one .deb runs on any glibc vintage.
       # Building against glibc on a current runner would bake in symbols that
       # older Debian and Ubuntu releases cannot resolve.
-      - name: Install musl cross toolchain
+      - name: Install musl toolchain
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends musl-tools
-          # The aarch64 musl target needs a cross linker; the amd64 one does
-          # not, and the package is unavailable on some runner images.
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            sudo apt-get install --yes --no-install-recommends \
-              gcc-aarch64-linux-gnu
-          fi
 
       - name: Install cargo-deb
         uses: taiki-e/install-action@v2
@@ -70,19 +69,13 @@ jobs:
           fi
 
       - name: Build package
-        env:
-          # cargo-deb drives the build itself; the linker must be set here
-          # rather than in .cargo/config.toml so that host builds (and the
-          # build script, which runs natively) are left alone.
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
         run: cargo deb --target ${{ matrix.target }} --profile deb --locked
 
       - name: Verify the package installs and runs
-        if: matrix.arch == 'amd64'
         run: |
           deb="$(find target/debian -name '*.deb' -print -quit)"
           sudo dpkg --install "$deb"
-          # The runner is a live cgroup v2 host, so this exercises the real
+          # Both runners are live cgroup v2 hosts, so this exercises the real
           # code path rather than only checking that the binary is present.
           cgtree --version
           cgtree list --depth 2
