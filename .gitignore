@@ -1,40 +1,17 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary, built with `go test -c`
-*.test
-
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
-go.work.sum
-
-# env file
-.env
-
-# Editor/IDE
-# .idea/
-# .vscode/
-
-
-# Added by cargo
-
+# Build artifacts. Build-script output (man pages, shell completions) and
+# cargo-deb packages both land here too.
 /target
 
-# Build-script output (man pages, shell completions) and cargo-deb packages
-# both land under /target, which is already ignored above.
+# Backup files from `cargo fix` / rustfmt
+**/*.rs.bk
+
+# Editor/IDE
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store
+
+# Environment
+.env
