@@ -33,6 +33,13 @@ clap_mangen = "0.3.3"
 [dev-dependencies]
 tempfile = "3.27.0"
 
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
 # Release packages are built with this profile. A single codegen unit and LTO
 # cost build time, which is fine for a tagged release, and shrink the static
 # musl binary that ships in the .deb.

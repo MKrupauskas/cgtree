@@ -10,6 +10,10 @@ use serde::Serialize;
 /// A closed downstream reader (`cgtree list | head`) is not an error: the
 /// `BrokenPipe` is swallowed so we exit quietly like other Unix filters
 /// instead of panicking out of `print!`.
+///
+/// # Errors
+///
+/// Returns an error if writing to stdout fails (other than a broken pipe).
 pub fn print(data: &CgroupData, depth: Option<usize>, props: &[String]) -> Result<()> {
     let mut out = String::new();
     render(data, depth, props, &mut out);
@@ -17,6 +21,11 @@ pub fn print(data: &CgroupData, depth: Option<usize>, props: &[String]) -> Resul
 }
 
 /// Prints the tree in JSON format.
+///
+/// # Errors
+///
+/// Returns an error if JSON serialization fails or writing to stdout fails
+/// (other than a broken pipe).
 pub fn print_json(data: &CgroupData, depth: Option<usize>, props: &[String]) -> Result<()> {
     let json_data = to_json(data, depth, props);
     let mut out = serde_json::to_string_pretty(&json_data)?;

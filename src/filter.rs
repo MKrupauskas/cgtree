@@ -1,13 +1,13 @@
 use crate::data::{CgroupNode, FieldEntry};
 
 /// Parses a comma-separated string into field name patterns.
-/// Example: "memory,cpu.weight" -> ["memory", "cpu.weight"]
+/// Example: `"memory,cpu.weight"` -> `["memory", "cpu.weight"]`
 pub fn parse_field_patterns(input: &str) -> Vec<String> {
     input
         .split(',')
-        .map(|s| s.trim())
+        .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
