@@ -7,14 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.1.0] - 2026-09-19
 
-- Debian packaging: `cargo deb` builds a `.deb` for amd64 and arm64, shipping
-  the binary, man pages, and bash/zsh/fish completions.
-- Man pages and shell completions generated at build time from the clap
-  definition.
-
-## [0.1.0]
+First tagged release.
 
 ### Added
 
@@ -22,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--props` field filtering, and `--format text|json`.
 - `explore` command: interactive terminal explorer with live field filtering.
 - `--root` for inspecting a hierarchy other than `/sys/fs/cgroup`.
+- Debian packages for amd64 and arm64, published on each tagged release.
+  Statically linked against musl, so they have no runtime dependencies and
+  work across Debian and Ubuntu releases.
+- Man pages (`cgtree`, `cgtree-list`, `cgtree-explore`) and bash, zsh and
+  fish completions, generated from the CLI definition and shipped in the
+  package.
 
 [Unreleased]: https://github.com/MKrupauskas/cgtree/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/MKrupauskas/cgtree/releases/tag/v0.1.0
