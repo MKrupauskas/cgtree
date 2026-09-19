@@ -20,6 +20,9 @@ Download the `.deb` for your architecture from the
 install it:
 
 ```sh
+# Optional: verify the download against its published checksum.
+sha256sum -c cgtree_<version>_amd64.deb.sha256
+
 sudo dpkg -i cgtree_<version>_amd64.deb   # or _arm64.deb
 ```
 

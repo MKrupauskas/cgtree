@@ -84,9 +84,14 @@ jobs:
           test -f /usr/share/bash-completion/completions/cgtree
           sudo dpkg --remove cgtree
 
+      # Run sha256sum from the package's own directory so the checksum file
+      # records a bare filename. The release publishes the .deb alongside it,
+      # so `sha256sum -c` has to resolve the name as downloaded — a recorded
+      # `target/debian/...` path would make verification fail for everyone.
       - name: Checksum
         run: |
-          deb="$(find target/debian -name '*.deb' -print -quit)"
+          deb="$(find target/debian -name '*.deb' -printf '%f' -quit)"
+          cd target/debian
           sha256sum "$deb" > "$deb.sha256"
 
       - uses: actions/upload-artifact@v4
