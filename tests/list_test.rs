@@ -3,6 +3,7 @@
 //! These tests exercise the CLI by running the compiled binary against
 //! temporary cgroup v2 hierarchies, ensuring end-to-end correctness.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -37,7 +38,7 @@ impl Fixture {
         fs::write(dir.join("cgroup.controllers"), "cpu memory pids\n").unwrap();
         fs::write(dir.join("cgroup.procs"), "1000\n").unwrap();
         for (name, value) in fields {
-            fs::write(dir.join(name), format!("{}\n", value)).unwrap();
+            fs::write(dir.join(name), format!("{value}\n")).unwrap();
         }
     }
 }
@@ -324,8 +325,7 @@ fn error_not_cgroup() {
     assert_eq!(
         err,
         format!(
-            "cgtree: {} does not look like a cgroup v2 hierarchy (no cgroup.controllers file)\n",
-            path
+            "cgtree: {path} does not look like a cgroup v2 hierarchy (no cgroup.controllers file)\n"
         )
     );
 }
@@ -413,7 +413,7 @@ fn deep_hierarchy() {
         if i > 0 {
             path.push('/');
         }
-        path.push_str(&format!("l{}", i));
+        let _ = write!(path, "l{i}");
         f.add(&path, &[]);
     }
 
@@ -428,7 +428,7 @@ fn many_children() {
     f.add(".", &[]);
 
     for i in 0..50 {
-        f.add(&format!("child{:02}", i), &[]);
+        f.add(&format!("child{i:02}"), &[]);
     }
 
     let (out, _, ok) = run(&["--root", f.root().to_str().unwrap(), "list"]);

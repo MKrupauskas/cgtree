@@ -5,6 +5,11 @@ use anyhow::{Context, Result, bail};
 use crate::data::CgroupData;
 
 /// Errors unless `root` looks like a cgroup v2 unified hierarchy.
+///
+/// # Errors
+///
+/// Returns an error if `root` does not exist, is not a directory, or does
+/// not look like a cgroup v2 unified hierarchy.
 pub fn ensure_v2(root: &Path) -> Result<()> {
     if !root.is_dir() {
         bail!("{} does not exist or is not a directory", root.display());
@@ -36,6 +41,10 @@ pub fn ensure_v2(root: &Path) -> Result<()> {
 }
 
 /// Reads the complete cgroup hierarchy with all data.
+///
+/// # Errors
+///
+/// Returns an error if `root` or any of its descendants cannot be read.
 pub fn scan(root: &Path) -> Result<CgroupData> {
     crate::data::read_all(root).with_context(|| format!("failed to scan {}", root.display()))
 }
@@ -50,7 +59,11 @@ mod tests {
     fn mkgroup(dir: &Path, procs: usize) {
         fs::create_dir_all(dir).unwrap();
         fs::write(dir.join("cgroup.controllers"), "cpu memory pids\n").unwrap();
-        let pids: String = (0..procs).map(|i| format!("{}\n", 100 + i)).collect();
+        let pids: String = (0..procs).fold(String::new(), |mut acc, i| {
+            use std::fmt::Write;
+            let _ = writeln!(acc, "{}", 100 + i);
+            acc
+        });
         fs::write(dir.join("cgroup.procs"), pids).unwrap();
     }
 

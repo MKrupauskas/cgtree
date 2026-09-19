@@ -137,7 +137,7 @@ impl Tui {
     /// The screen with trailing blank lines dropped.
     pub fn visible(&self) -> Vec<String> {
         let mut lines = self.screen();
-        while lines.last().is_some_and(|l| l.is_empty()) {
+        while lines.last().is_some_and(String::is_empty) {
             lines.pop();
         }
         lines
