@@ -106,10 +106,29 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      # The release body is this version's CHANGELOG.md section, so the
+      # release page says what changed rather than only listing commits.
+      # --generate-notes still appends the commit list below it.
+      - name: Extract the changelog section for this version
+        run: |
+          version="${GITHUB_REF#refs/tags/}"
+          awk -v ver="## [${version#v}]" '
+            index($0, ver) == 1 { found = 1; next }
+            found && /^## \[/    { exit }
+            found && /^\[.+\]: /  { exit }
+            found               { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No CHANGELOG.md section for $version" >&2
+            exit 1
+          fi
 
       - name: Create the release and upload packages
         env:
@@ -119,5 +138,6 @@ jobs:
           version="${GITHUB_REF#refs/tags/}"
           gh release create "$version" \
             --title "$version" \
+            --notes-file release-notes.md \
             --generate-notes \
             dist/*

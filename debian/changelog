@@ -1,9 +1,20 @@
 cgtree (0.1.0-1) unstable; urgency=medium
 
   * Initial Debian package.
-  * list: print the cgroup v2 hierarchy as a tree, with --depth, --props
-    field filtering, and --format text|json.
-  * explore: interactive terminal explorer with live field filtering.
+  * First release of cgtree, a CLI for inspecting the cgroup v2 hierarchy.
+    Running cgtree with no arguments opens the interactive explorer on a
+    terminal and falls back to list output when piped.
+  * list: print the hierarchy as a tree on stdout, with --depth to limit
+    levels and --format text|json to choose between the tree rendering and a
+    JSON document of every node and its interface files.
+  * explore: interactive terminal explorer with expand/collapse navigation,
+    expand-all and collapse-all, rescan, and an in-app help screen.
+  * Property display: --props shows cgroup interface files alongside each
+    node, matched by comma-separated substring patterns ("*" for all); the
+    explorer applies the same matching live via 'p' and 'f'.
+  * --root inspects a hierarchy other than /sys/fs/cgroup. cgroup v1 hosts are
+    reported as unsupported, and unreadable directories are shown as leaves
+    rather than aborting the scan.
   * Ships man pages and bash, zsh and fish completions.
 
  -- Mykolas Krupauskas <m.krupauskas@gmail.com>  Sat, 19 Sep 2026 00:00:00 +0000
