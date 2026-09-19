@@ -2,9 +2,16 @@
 name = "cgtree"
 version = "0.1.0"
 edition = "2024"
+description = "Inspect the cgroup v2 hierarchy from the command line"
+repository = "https://github.com/MKrupauskas/cgtree"
+license = "MIT"
+readme = "README.md"
+keywords = ["cgroup", "cgroups", "linux", "cli", "tui"]
+categories = ["command-line-utilities"]
 # cgtree ships as a binary. The library target exists so the integration
 # tests in `tests/` can drive the explorer; it is not a supported API.
 publish = false
+build = "build.rs"
 
 [dependencies]
 anyhow = "1.0.103"
@@ -14,5 +21,61 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tui-input = "0.15"
 
+[build-dependencies]
+# Kept in step with the `clap` version above: the build script builds the same
+# `Command` the binary parses with, to render the man page and completions.
+# `string` lets the build script name the per-subcommand man pages from an
+# owned String; without it clap only accepts &'static str.
+clap = { version = "4.6.1", features = ["derive", "string"] }
+clap_complete = "4.6.11"
+clap_mangen = "0.3.3"
+
 [dev-dependencies]
 tempfile = "3.27.0"
+
+# Release packages are built with this profile. A single codegen unit and LTO
+# cost build time, which is fine for a tagged release, and shrink the static
+# musl binary that ships in the .deb.
+[profile.deb]
+inherits = "release"
+lto = true
+codegen-units = 1
+strip = true
+
+[package.metadata.deb]
+# Required by Debian policy. cargo-deb would otherwise fall back to the first
+# `authors` entry, and this crate sets none, producing a package that dpkg
+# warns about on install.
+maintainer = "Mykolas Krupauskas <m.krupauskas@gmail.com>"
+# Debian-syntax changelog; cargo-deb installs it as changelog.Debian.gz.
+# CHANGELOG.md stays the human-facing one in the repo.
+changelog = "debian/changelog"
+copyright = "2026, Mykolas Krupauskas <m.krupauskas@gmail.com>"
+# `cgtree` reads /sys/fs/cgroup; it is a system inspection tool.
+section = "utils"
+priority = "optional"
+# The release build is static (musl), so there is nothing to resolve here in
+# practice; `$auto` keeps that honest if the target ever moves back to glibc.
+depends = "$auto"
+extended-description = """\
+cgtree prints the cgroup v2 hierarchy under /sys/fs/cgroup as a tree, with
+optional display of cgroup properties such as memory and cpu limits. It offers
+a pipe-friendly `list` mode with text and JSON output, and an interactive
+terminal explorer for walking large hierarchies.
+
+Useful for debugging resource isolation, comparing slice layout across hosts,
+and feeding cgroup state into other tools. Requires a cgroup v2 unified
+hierarchy; it refuses to run against cgroup v1."""
+assets = [
+    # cargo-deb rewrites the `target/release/` prefix to the real target
+    # directory when --target is passed, so this path is correct for the
+    # cross-compiled musl builds the release workflow produces.
+    ["target/release/cgtree", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/cgtree/README.md", "644"],
+    ["target/dist/cgtree.1", "usr/share/man/man1/cgtree.1", "644"],
+    ["target/dist/cgtree-list.1", "usr/share/man/man1/cgtree-list.1", "644"],
+    ["target/dist/cgtree-explore.1", "usr/share/man/man1/cgtree-explore.1", "644"],
+    ["target/dist/cgtree.bash", "usr/share/bash-completion/completions/cgtree", "644"],
+    ["target/dist/_cgtree", "usr/share/zsh/vendor-completions/_cgtree", "644"],
+    ["target/dist/cgtree.fish", "usr/share/fish/vendor_completions.d/cgtree.fish", "644"],
+]

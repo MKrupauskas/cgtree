@@ -1,0 +1,9 @@
+cgtree (0.1.0-1) unstable; urgency=medium
+
+  * Initial Debian package.
+  * list: print the cgroup v2 hierarchy as a tree, with --depth, --props
+    field filtering, and --format text|json.
+  * explore: interactive terminal explorer with live field filtering.
+  * Ships man pages and bash, zsh and fish completions.
+
+ -- Mykolas Krupauskas <m.krupauskas@gmail.com>  Sat, 19 Sep 2026 00:00:00 +0000
