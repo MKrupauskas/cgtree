@@ -12,6 +12,7 @@
 
 pub mod cgroup;
 pub mod cli;
+pub mod hierarchy;
 pub mod list;
 pub mod tui;
 

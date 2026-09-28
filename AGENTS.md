@@ -34,7 +34,9 @@ docker run --rm --privileged --cgroupns=host \
 ## Code Structure
 
 - `src/main.rs` - CLI entry point and command parsing
-- `src/cgroup.rs` - Core cgroup hierarchy scanning and validation
+- `src/cli.rs` - CLI definition, including `--kind` (also compiled by `build.rs`)
+- `src/hierarchy.rs` - Per-kind default root and validation (cgroup, damon, generic), and scanning
+- `src/cgroup.rs` - cgroup v2 validation
 - `src/data.rs` - Cgroup data structures and file reading
 - `src/list.rs` - Tree printing for `list` command
 - `src/tui.rs` - Interactive explorer implementation

@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
-
-use crate::data::CgroupData;
+use anyhow::{Result, bail};
 
 /// Errors unless `root` looks like a cgroup v2 unified hierarchy.
 pub fn ensure_v2(root: &Path) -> Result<()> {
@@ -35,14 +33,10 @@ pub fn ensure_v2(root: &Path) -> Result<()> {
     );
 }
 
-/// Reads the complete cgroup hierarchy with all data.
-pub fn scan(root: &Path) -> Result<CgroupData> {
-    crate::data::read_all(root).with_context(|| format!("failed to scan {}", root.display()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hierarchy::scan;
     use std::fs;
 
     /// Builds a fake cgroup v2 tree: each dir gets cgroup.controllers and

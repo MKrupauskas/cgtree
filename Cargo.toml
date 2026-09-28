@@ -2,11 +2,11 @@
 name = "cgtree"
 version = "0.1.0"
 edition = "2024"
-description = "Inspect the cgroup v2 hierarchy from the command line"
+description = "Inspect the cgroup v2 hierarchy, DAMON and other sysfs trees from the command line"
 repository = "https://github.com/MKrupauskas/cgtree"
 license = "MIT"
 readme = "README.md"
-keywords = ["cgroup", "cgroups", "linux", "cli", "tui"]
+keywords = ["cgroup", "sysfs", "damon", "linux", "tui"]
 categories = ["command-line-utilities"]
 # cgtree ships as a binary. The library target exists so the integration
 # tests in `tests/` can drive the explorer; it is not a supported API.
@@ -16,6 +16,8 @@ build = "build.rs"
 [dependencies]
 anyhow = "1.0.103"
 clap = { version = "4.6.1", features = ["derive"] }
+# O_NONBLOCK for opening kernel interface files without hanging on stream-like ones.
+libc = "0.2"
 ratatui = "0.30.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -65,7 +67,8 @@ terminal explorer for walking large hierarchies.
 
 Useful for debugging resource isolation, comparing slice layout across hosts,
 and feeding cgroup state into other tools. Requires a cgroup v2 unified
-hierarchy; it refuses to run against cgroup v1."""
+hierarchy; it refuses to run against cgroup v1. With --kind it also inspects
+the DAMON sysfs interface or any other sysfs-style directory tree."""
 assets = [
     # cargo-deb rewrites the `target/release/` prefix to the real target
     # directory when --target is passed, so this path is correct for the

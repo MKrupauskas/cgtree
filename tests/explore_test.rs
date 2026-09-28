@@ -733,7 +733,7 @@ fn question_mark_opens_the_help_screen() {
     tui.press('?');
 
     let text = tui.text();
-    assert!(text.contains("Interactive cgroup hierarchy explorer"));
+    assert!(text.contains("Interactive hierarchy explorer"));
     assert!(text.contains("Navigation"));
     assert!(text.contains("Expand all nodes"));
     assert!(text.contains("Press ? or Esc to close this help"));
