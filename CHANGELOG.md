@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--kind cgroup|damon|generic` (`-k`) to inspect hierarchies other than
+  cgroup v2. `damon` reads the DAMON sysfs interface at
+  `/sys/kernel/mm/damon/admin`; `generic` reads any directory tree given with
+  `--root`, such as a sysfs, configfs or debugfs subtree. `cgroup` stays the
+  default, and `--root` now defaults to the chosen kind's usual location.
+
+### Changed
+
+- Symlinks are listed as properties showing their target (`-> ../devices/...`)
+  instead of being ignored. They are still never followed.
+- Files with no read permission bits (write-only kernel triggers) are skipped.
+- Files are opened non-blocking, values are capped at 64 KiB, and non-UTF-8
+  contents show as `<binary: N bytes>`, so scanning arbitrary kernel
+  interfaces cannot hang or flood the output.
+
 ## [0.1.0] - 2026-09-19
 
 First tagged release.

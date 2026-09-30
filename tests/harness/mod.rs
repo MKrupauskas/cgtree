@@ -53,7 +53,7 @@ impl Fixture {
 
     /// Opens the explorer on this hierarchy at the given terminal size.
     pub fn explore(&self, width: u16, height: u16) -> Tui {
-        let data = cgtree::cgroup::scan(self.root()).unwrap();
+        let data = cgtree::hierarchy::scan(self.root()).unwrap();
         let app = App::new(self.root().to_path_buf(), data);
         let terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         let mut tui = Tui {

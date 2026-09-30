@@ -12,9 +12,9 @@ use ratatui::{DefaultTerminal, Frame};
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
-use crate::cgroup;
 use crate::data::{CgroupData, CgroupNode};
 use crate::filter;
+use crate::hierarchy;
 
 pub fn run(root: &Path, data: CgroupData) -> Result<()> {
     if !std::io::stdout().is_terminal() {
@@ -283,7 +283,7 @@ impl App {
     }
 
     fn rescan(&mut self) {
-        if let Ok(data) = cgroup::scan(&self.root) {
+        if let Ok(data) = hierarchy::scan(&self.root) {
             self.data = data;
             self.nodes.clear();
             Self::collect_node_paths(&self.data.root, &mut self.nodes);
@@ -639,7 +639,7 @@ impl App {
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::raw("- Interactive cgroup hierarchy explorer"),
+                Span::raw("- Interactive hierarchy explorer"),
             ]),
             Line::from(""),
             Line::from(Span::styled(
@@ -670,7 +670,7 @@ impl App {
             ]),
             Line::from("  p                   Toggle props display mode:"),
             Line::from("                        • Hide - No properties shown (default)"),
-            Line::from("                        • Show all - Display all cgroup properties"),
+            Line::from("                        • Show all - Display all properties"),
             Line::from("                        • Filtered - Show properties matching your filter"),
             Line::from(""),
             Line::from(vec![
@@ -698,7 +698,7 @@ impl App {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             )),
-            Line::from("  r                   Rescan the cgroup hierarchy"),
+            Line::from("  r                   Rescan the hierarchy"),
             Line::from("  ?                   Show this help screen"),
             Line::from("  q  or  Esc          Quit (or close help)"),
             Line::from(""),

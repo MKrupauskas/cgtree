@@ -612,3 +612,138 @@ fn closed_pipe_exits_quietly() {
         );
     }
 }
+
+// ============================================================================
+// Other Hierarchy Kinds
+// ============================================================================
+
+/// Writes `value` to `root/path`, creating parent directories.
+fn write_file(root: &Path, path: &str, value: &str) {
+    let file = root.join(path);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(file, format!("{value}\n")).unwrap();
+}
+
+#[test]
+fn cgroup_kind_rejects_a_non_cgroup_tree() {
+    let f = Fixture::new();
+    write_file(f.root(), "kdamonds/nr_kdamonds", "0");
+
+    let (_, err, ok) = run(&["--root", f.root().to_str().unwrap(), "list"]);
+    assert!(!ok, "the default kind still insists on cgroup v2");
+    assert!(
+        err.contains("cgroup.controllers"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn generic_kind_lists_any_directory_tree() {
+    let f = Fixture::new();
+    write_file(f.root(), "a/b/value", "42");
+    write_file(f.root(), "c/value", "on");
+
+    let (out, err, ok) = run(&[
+        "--kind",
+        "generic",
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--props",
+        "value",
+    ]);
+    assert!(ok, "command failed: {err}");
+    let expected = format!(
+        "{}/\n├── a/\n│   └── b\n│           value = 42\n└── c\n        value = on\n",
+        f.root().display()
+    );
+    assert_eq!(out, expected);
+}
+
+#[test]
+fn generic_kind_requires_root() {
+    let (_, err, ok) = run(&["--kind", "generic", "list"]);
+    assert!(!ok);
+    assert!(err.contains("--root"), "unexpected error: {err}");
+}
+
+/// A DAMON sysfs admin tree with one kdamond monitoring virtual addresses.
+fn damon_fixture() -> Fixture {
+    let f = Fixture::new();
+    let r = f.root();
+    write_file(r, "kdamonds/nr_kdamonds", "1");
+    write_file(r, "kdamonds/0/state", "off");
+    write_file(r, "kdamonds/0/pid", "-1");
+    write_file(r, "kdamonds/0/contexts/nr_contexts", "1");
+    write_file(r, "kdamonds/0/contexts/0/operations", "vaddr");
+    write_file(
+        r,
+        "kdamonds/0/contexts/0/monitoring_attrs/intervals/sample_us",
+        "5000",
+    );
+    write_file(
+        r,
+        "kdamonds/0/contexts/0/monitoring_attrs/intervals/aggr_us",
+        "100000",
+    );
+    write_file(r, "kdamonds/0/contexts/0/targets/nr_targets", "0");
+    write_file(r, "kdamonds/0/contexts/0/schemes/nr_schemes", "0");
+    f
+}
+
+#[test]
+fn damon_kind_lists_kdamonds() {
+    let f = damon_fixture();
+    let (out, err, ok) = run(&[
+        "--kind",
+        "damon",
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--props",
+        "state,operations,_us",
+    ]);
+    assert!(ok, "command failed: {err}");
+    assert!(out.contains("└── kdamonds/\n"), "{out}");
+    assert!(out.contains("state = off"), "{out}");
+    assert!(out.contains("operations = vaddr"), "{out}");
+    assert!(out.contains("sample_us = 5000"), "{out}");
+    assert!(out.contains("aggr_us = 100000"), "{out}");
+}
+
+#[test]
+fn damon_kind_json() {
+    let f = damon_fixture();
+    let (out, err, ok) = run(&[
+        "-k",
+        "damon",
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--format",
+        "json",
+        "--props",
+        "state",
+    ]);
+    assert!(ok, "command failed: {err}");
+    let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let kdamond = &json["root"]["children"][0]["children"][0];
+    assert_eq!(kdamond["name"], "0");
+    assert_eq!(kdamond["fields"][0]["name"], "state");
+    assert_eq!(kdamond["fields"][0]["value"], "off");
+}
+
+#[test]
+fn damon_kind_rejects_other_directories() {
+    let f = Fixture::new();
+    f.add(".", &[]);
+    let (_, err, ok) = run(&[
+        "--kind",
+        "damon",
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("kdamonds"), "unexpected error: {err}");
+}

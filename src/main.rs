@@ -1,5 +1,5 @@
 use cgtree::cli::{Cli, Command, Format};
-use cgtree::{cgroup, list, tui};
+use cgtree::{hierarchy, list, tui};
 
 use std::io::IsTerminal;
 use std::process::ExitCode;
@@ -18,8 +18,9 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
-    cgroup::ensure_v2(&cli.root)?;
-    let data = cgroup::scan(&cli.root)?;
+    let root = hierarchy::resolve_root(cli.kind, cli.root)?;
+    hierarchy::validate(cli.kind, &root)?;
+    let data = hierarchy::scan(&root)?;
     match cli.command {
         Some(Command::List {
             depth,
@@ -29,10 +30,10 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             Format::Json => list::print_json(&data, depth, &props)?,
             Format::Text => list::print(&data, depth, &props)?,
         },
-        Some(Command::Explore) => tui::run(&cli.root, data)?,
+        Some(Command::Explore) => tui::run(&root, data)?,
         None => {
             if std::io::stdout().is_terminal() {
-                tui::run(&cli.root, data)?;
+                tui::run(&root, data)?;
             } else {
                 list::print(&data, None, &[])?;
             }

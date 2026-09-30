@@ -9,7 +9,9 @@ comparing slice layout across hosts, and piping output into other tools for
 quick exploration.
 
 The tool targets cgroup v2 unified hierarchies; it refuses to run `list` on
-cgroup v1.
+cgroup v1. The same tree view also works for other kernel interfaces laid out
+as directories of value files, such as the DAMON sysfs interface or any sysfs
+subtree; see [Other hierarchies](#other-hierarchies).
 
 ## Install
 
@@ -47,6 +49,8 @@ cgtree list --props "*"          # show all cgroup properties
 cgtree list --depth 2            # limit tree depth
 cgtree list --format json        # output as JSON (text or json)
 cgtree --root PATH ...           # inspect a different hierarchy root (default /sys/fs/cgroup)
+cgtree --kind damon list         # inspect the DAMON sysfs interface
+cgtree --kind generic --root /sys/block list   # inspect any directory tree
 ```
 
 ### `list`
@@ -146,11 +150,67 @@ f → * ↵                         # Show all properties
 
 When filters are active, the footer displays the current filter (e.g., `f filter [memory,cpu]`). Press `f` again to change the filter.
 
+### Other hierarchies
+
+cgroupfs is one of several kernel interfaces that expose configuration as a
+tree of directories holding one-value files. `--kind` (`-k`) points cgtree at
+the others; `list`, `explore`, `--props` and `--format json` work the same
+for every kind.
+
+| Kind | Default root | Validation |
+| --- | --- | --- |
+| `cgroup` (default) | `/sys/fs/cgroup` | must be cgroup v2 (has `cgroup.controllers`) |
+| `damon` | `/sys/kernel/mm/damon/admin` | must contain `kdamonds/` (kernel needs `CONFIG_DAMON_SYSFS`) |
+| `generic` | none, `--root` is required | any directory |
+
+```sh
+# Show every kdamond's state, operations set and monitoring intervals
+sudo cgtree -k damon list --props state,operations,_us
+
+# A sysfs subtree, configfs, or debugfs
+cgtree -k generic --root /sys/kernel/mm/transparent_hugepage list --props '*'
+sudo cgtree -k generic --root /sys/kernel/config explore
+```
+
+Example output of `cgtree -k damon list --props state,operations,nr_` with one
+kdamond configured:
+
+```
+/sys/kernel/mm/damon/admin/
+└── kdamonds/
+        nr_kdamonds = 1
+    └── 0/
+            state = off
+        └── contexts/
+                nr_contexts = 1
+            └── 0/
+                    operations = vaddr
+                ├── monitoring_attrs/
+                ├── schemes/
+                │       nr_schemes = 1
+                └── targets
+                        nr_targets = 0
+```
+
+How arbitrary kernel interfaces are read:
+
+- **Symlinks** are listed as properties showing their target
+  (`eth0 = -> ../../devices/...`) and never followed, so sysfs's
+  cross-links cannot duplicate subtrees or loop.
+- **Write-only files** (no read permission bits, e.g. trigger knobs) are
+  skipped.
+- **Reads cannot hang or flood**: files are opened non-blocking, values are
+  capped at 64 KiB, and non-UTF-8 contents show as `<binary: N bytes>`.
+- cgtree reads **every readable file** in the tree up front. On sysfs that
+  is side-effect free, but some debugfs files do work when read, so point
+  `--root` at the subtree you care about rather than at `/sys` or
+  `/sys/kernel/debug` as a whole.
+
 ## Notes
 
 - cgroups are Linux-only; on other platforms (or for testing) point `--root`
   at any directory that mimics a v2 hierarchy — a directory tree where each
-  cgroup contains a `cgroup.controllers` file.
+  cgroup contains a `cgroup.controllers` file — or use `--kind generic`.
 - Unreadable cgroup directories (e.g. permission-restricted ones when running
   unprivileged) are shown as leaves rather than aborting the scan.
 

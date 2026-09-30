@@ -9,10 +9,14 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-/// Inspect the cgroup v2 hierarchy.
+/// Inspect the cgroup v2 hierarchy, or any other sysfs-style directory tree.
 ///
 /// With no command (or `explore`), opens an interactive tree viewer when
 /// stdout is a terminal; otherwise prints the tree like `list`.
+///
+/// `--kind` selects what is inspected: the cgroup v2 hierarchy (default), the
+/// DAMON sysfs interface, or any directory tree whose files hold values
+/// (sysfs, configfs, debugfs, ...).
 ///
 /// For detailed usage of each command, see:
 ///   cgtree explore --help
@@ -20,9 +24,14 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Parser)]
 #[command(name = "cgtree", version, about)]
 pub struct Cli {
-    /// Root of the cgroup v2 hierarchy
-    #[arg(long, global = true, default_value = "/sys/fs/cgroup")]
-    pub root: PathBuf,
+    /// Kind of hierarchy to inspect
+    #[arg(short, long, global = true, value_enum, default_value_t = Kind::Cgroup)]
+    pub kind: Kind,
+
+    /// Root of the hierarchy [default: /sys/fs/cgroup for `cgroup`,
+    /// /sys/kernel/mm/damon/admin for `damon`; required for `generic`]
+    #[arg(long, global = true)]
+    pub root: Option<PathBuf>,
 
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -30,13 +39,13 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Print the cgroup tree to stdout (pipe-friendly)
+    /// Print the tree to stdout (pipe-friendly)
     List {
         /// Limit the tree to N levels below the root
         #[arg(short, long)]
         depth: Option<usize>,
 
-        /// Show specified cgroup properties (comma-separated, e.g. "memory.swap.max,cpu.weight").
+        /// Show specified properties (comma-separated, e.g. "memory.swap.max,cpu.weight").
         /// Patterns use substring matching (e.g. "memory" matches "memory.max", "memory.swap.max").
         /// Use "*" to show all fields.
         #[arg(short, long, value_delimiter = ',')]
@@ -48,9 +57,24 @@ pub enum Command {
     },
     /// Open the interactive explorer.
     ///
-    /// Press 'f' to filter and display cgroup fields interactively.
+    /// Press 'f' to filter and display properties interactively.
     /// Supports comma-separated patterns with substring matching (e.g. "memory,cpu").
     Explore,
+}
+
+/// The kinds of hierarchy cgtree knows how to inspect.
+///
+/// Every kind is read the same way: directories are nodes and the regular
+/// files in them are the node's properties. The kind only decides the default
+/// root and how that root is validated before scanning.
+#[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
+pub enum Kind {
+    /// cgroup v2 unified hierarchy; refuses cgroup v1
+    Cgroup,
+    /// DAMON (Data Access MONitor) sysfs interface
+    Damon,
+    /// Any directory tree, e.g. a sysfs, configfs or debugfs subtree
+    Generic,
 }
 
 #[derive(Clone, Copy, PartialEq, ValueEnum)]

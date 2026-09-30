@@ -186,6 +186,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "clap_mangen",
+ "libc",
  "ratatui",
  "serde",
  "serde_json",
