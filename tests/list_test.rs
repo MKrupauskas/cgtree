@@ -136,6 +136,35 @@ fn list_props_substring_match() {
 }
 
 #[test]
+fn list_props_glob() {
+    let f = Fixture::new();
+    f.add(
+        ".",
+        &[
+            ("memory.max", "456"),
+            ("memory.swap.max", "123"),
+            ("memory.swap.current", "0"),
+            ("pids.max", "max"),
+        ],
+    );
+
+    let (out, _, ok) = run(&[
+        "--root",
+        f.root().to_str().unwrap(),
+        "list",
+        "--props",
+        "memory*.max",
+    ]);
+    assert!(ok);
+
+    let expected = format!(
+        "{}\n    memory.max = 456\n    memory.swap.max = 123\n",
+        f.root().display()
+    );
+    assert_eq!(out, expected);
+}
+
+#[test]
 fn list_props_star() {
     let f = Fixture::new();
     f.add(".", &[("memory.max", "max"), ("cpu.weight", "100")]);

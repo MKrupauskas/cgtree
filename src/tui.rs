@@ -689,6 +689,7 @@ impl App {
             Line::from("                      Type comma-separated patterns (e.g., memory,cpu)"),
             Line::from("                      Use * to show all properties"),
             Line::from("                      Patterns use substring matching"),
+            Line::from("                      * and ? make a glob (e.g., memory*.max)"),
             Line::from("  Enter               Apply filter and switch to filtered mode"),
             Line::from("  Esc                 Cancel filter input"),
             Line::from(""),

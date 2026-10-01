@@ -13,27 +13,67 @@ pub fn parse_field_patterns(input: &str) -> Vec<String> {
 
 /// Filters fields from a node based on the given patterns.
 /// - If patterns is empty, returns empty vec
-/// - If patterns contains "*", returns all fields
-/// - Otherwise returns fields that contain any of the patterns as a substring
+/// - Otherwise returns fields whose name matches any of the patterns
+///   (see [`matches_pattern`])
 pub fn filter_node_fields<'a>(node: &'a CgroupNode, patterns: &[String]) -> Vec<&'a FieldEntry> {
-    if patterns.is_empty() {
-        return Vec::new();
-    }
+    node.fields
+        .iter()
+        .filter(|field| {
+            patterns
+                .iter()
+                .any(|pattern| matches_pattern(&field.name, pattern))
+        })
+        .collect()
+}
 
-    let show_all = patterns.iter().any(|p| p == "*");
-
-    if show_all {
-        node.fields.iter().collect()
+/// Reports whether a field name matches a single pattern.
+///
+/// A pattern containing `*` or `?` is a glob matched against the whole name:
+/// `*` matches any run of characters and `?` exactly one (so `memory*.max`
+/// matches `memory.max` and `memory.swap.max`, and a bare `*` matches every
+/// field). Any other pattern matches as a substring.
+pub fn matches_pattern(name: &str, pattern: &str) -> bool {
+    if pattern.contains(['*', '?']) {
+        glob_match(name, pattern)
     } else {
-        node.fields
-            .iter()
-            .filter(|field| {
-                patterns
-                    .iter()
-                    .any(|pattern| field.name.contains(pattern.as_str()))
-            })
-            .collect()
+        name.contains(pattern)
     }
+}
+
+/// Matches `name` against a glob made of literal characters, `*` and `?`.
+///
+/// Iterative backtracking: on a mismatch, retry from the most recent `*`
+/// letting it absorb one more character. Linear in practice, and never worse
+/// than O(name × pattern).
+fn glob_match(name: &str, pattern: &str) -> bool {
+    let name: Vec<char> = name.chars().collect();
+    let pattern: Vec<char> = pattern.chars().collect();
+    let (mut n, mut p) = (0, 0);
+    // Position of the last `*` in the pattern, and the name position it was
+    // tried against.
+    let mut star: Option<(usize, usize)> = None;
+
+    while n < name.len() {
+        match pattern.get(p) {
+            Some('*') => {
+                star = Some((p, n));
+                p += 1;
+            }
+            Some(&c) if c == '?' || c == name[n] => {
+                n += 1;
+                p += 1;
+            }
+            _ => match star {
+                Some((sp, sn)) => {
+                    p = sp + 1;
+                    n = sn + 1;
+                    star = Some((sp, sn + 1));
+                }
+                None => return false,
+            },
+        }
+    }
+    pattern[p..].iter().all(|&c| c == '*')
 }
 
 #[cfg(test)]
@@ -133,5 +173,54 @@ mod tests {
         assert_eq!(fields.len(), 2);
         assert!(fields.iter().any(|f| f.name == "memory.swap.max"));
         assert!(fields.iter().any(|f| f.name == "cpu.weight"));
+    }
+
+    #[test]
+    fn glob_matches_whole_name() {
+        let node = node_with_fields(
+            "test",
+            vec![
+                ("memory.max", "max"),
+                ("memory.swap.max", "max"),
+                ("memory.swap.max.extra", "x"),
+                ("memory.swap.current", "0"),
+                ("cpu.max", "100000 100000"),
+            ],
+        );
+        let fields = filter_node_fields(&node, &[String::from("memory*.max")]);
+        let names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, vec!["memory.max", "memory.swap.max"]);
+    }
+
+    #[test]
+    fn glob_and_substring_patterns_combine() {
+        let node = node_with_fields(
+            "test",
+            vec![
+                ("memory.max", "max"),
+                ("memory.swap.max", "max"),
+                ("cpu.weight", "100"),
+                ("pids.max", "max"),
+            ],
+        );
+        let patterns = [String::from("memory*.max"), String::from("weight")];
+        let fields = filter_node_fields(&node, &patterns);
+        let names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, vec!["memory.max", "memory.swap.max", "cpu.weight"]);
+    }
+
+    #[test]
+    fn glob_cases() {
+        assert!(matches_pattern("memory.max", "*"));
+        assert!(matches_pattern("", "*"));
+        assert!(matches_pattern("memory.max", "*.max"));
+        assert!(!matches_pattern("memory.max.x", "*.max"));
+        assert!(matches_pattern("memory.max", "memory.*"));
+        assert!(matches_pattern("cpu.max", "cpu.ma?"));
+        assert!(!matches_pattern("cpu.max", "cpu.m?"));
+        assert!(matches_pattern("io.pressure", "i*o*e"));
+        assert!(matches_pattern("memory.swap.max", "*swap*"));
+        assert!(!matches_pattern("memory.max", "*swap*"));
+        assert!(matches_pattern("memory.swap.max", "m**x"));
     }
 }

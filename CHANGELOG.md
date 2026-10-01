@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Glob patterns in `--props` and the explorer's field filter: a pattern
+  containing `*` or `?` matches the whole field name (e.g. `memory*.max`).
+
 ## [0.1.0] - 2026-09-19
 
 First tagged release.

@@ -65,7 +65,7 @@ Plain `tree`-style output on stdout:
 
 **Field Filtering:**
 
-Use `--props` to display cgroup fields alongside the tree. The `--props` option accepts comma-separated field name patterns that use **substring matching**:
+Use `--props` to display cgroup fields alongside the tree. The `--props` option accepts comma-separated field name patterns. A plain pattern uses **substring matching**; a pattern containing `*` or `?` is a **glob** matched against the whole field name (`*` matches any run of characters, `?` exactly one):
 
 ```sh
 # Show fields containing "memory"
@@ -76,6 +76,9 @@ cgtree list --props memory,cpu
 
 # Show specific fields like memory.swap.max and cpu.weight
 cgtree list --props swap,cpu.weight
+
+# Show memory.max, memory.swap.max, memory.zswap.max, ... (glob)
+cgtree list --props "memory*.max"
 
 # Show all fields
 cgtree list --props "*"
@@ -95,7 +98,7 @@ Example output with `--props memory.max,cpu.weight`:
         cpu.weight = 200
 ```
 
-Fields are matched by substring, so `--props swap` will match both `memory.swap.max` and `memory.swap.current`.
+Plain patterns match by substring, so `--props swap` will match both `memory.swap.max` and `memory.swap.current`. Globs match the whole name, so `--props "*.max"` matches `memory.max` and `pids.max` but not `memory.max.extra`. Quote globs so the shell doesn't expand them.
 
 ### Interactive explorer
 
@@ -132,6 +135,7 @@ Press `f` to activate the property filter. This opens an input prompt at the bot
 - **Enter** - Apply the filter and display matching properties under each node
 - **Esc** - Cancel filter input
 - **Substring matching** - Patterns match property names by substring (e.g., `memory` matches `memory.max`, `memory.swap.max`, etc.)
+- **Globs** - Patterns containing `*` or `?` match the whole property name (e.g., `memory*.max` matches `memory.max` and `memory.swap.max`)
 - **Multiple patterns** - Use commas to combine patterns (e.g., `memory,cpu` shows all memory and cpu properties)
 - **Show all** - Use `*` to display all properties
 
@@ -141,6 +145,7 @@ Press `f` to activate the property filter. This opens an input prompt at the bot
 f → memory ↵                    # Show all properties containing "memory"
 f → memory,cpu ↵                # Show all memory and cpu properties
 f → swap,cpu.weight ↵           # Show swap-related properties and cpu.weight
+f → memory*.max ↵               # Show memory.max, memory.swap.max, ...
 f → * ↵                         # Show all properties
 ```
 

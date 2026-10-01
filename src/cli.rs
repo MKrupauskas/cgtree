@@ -37,7 +37,9 @@ pub enum Command {
         depth: Option<usize>,
 
         /// Show specified cgroup properties (comma-separated, e.g. "memory.swap.max,cpu.weight").
-        /// Patterns use substring matching (e.g. "memory" matches "memory.max", "memory.swap.max").
+        /// Plain patterns use substring matching (e.g. "memory" matches "memory.max", "memory.swap.max").
+        /// Patterns containing "*" or "?" are globs matched against the whole name
+        /// (e.g. "memory*.max" matches "memory.max" and "memory.swap.max").
         /// Use "*" to show all fields.
         #[arg(short, long, value_delimiter = ',')]
         props: Vec<String>,
@@ -49,7 +51,8 @@ pub enum Command {
     /// Open the interactive explorer.
     ///
     /// Press 'f' to filter and display cgroup fields interactively.
-    /// Supports comma-separated patterns with substring matching (e.g. "memory,cpu").
+    /// Supports comma-separated patterns with substring matching (e.g. "memory,cpu")
+    /// or globs (e.g. "memory*.max").
     Explore,
 }
 
