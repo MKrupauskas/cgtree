@@ -94,7 +94,7 @@ jobs:
           cd target/debian
           sha256sum "$deb" > "$deb.sha256"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: deb-${{ matrix.arch }}
           path: target/debian/*.deb*
